@@ -7,6 +7,10 @@ const statusEl = $("#status");
 const dropButton = $("#drop");
 const progressEl = $("#progress");
 const revealEl = $("#reveal");
+const collectionEl = $("#collection");
+const collectionTitleEl = $("#collectionTitle");
+const collectionListEl = $("#collectionList");
+const collectionCloseButton = $("#collectionClose");
 const exitButton = $("#exit");
 const moveButtons = [...document.querySelectorAll(".move")];
 const embedded = window.self !== window.top;
@@ -114,7 +118,7 @@ consoleTop.rotation.x = -0.08;
 const redButton = mesh(new THREE.CylinderGeometry(0.18, 0.2, 0.12, 24), mat(PAL.coral, 0.28), machine);
 redButton.position.set(1.38, 1.11, 1.5);
 
-// 機頂招牌用 CanvasTexture，避免額外字型與圖片依賴。
+// 招牌用 CanvasTexture，避免額外字型與圖片依賴。
 const signCanvas = document.createElement("canvas");
 signCanvas.width = 768; signCanvas.height = 160;
 const signContext = signCanvas.getContext("2d");
@@ -126,15 +130,38 @@ for (let x = 20; x < 768; x += 52) signContext.fillRect(x, 20 + (x % 104), 18, 1
 signContext.fillStyle = "#fff"; signContext.textAlign = "center"; signContext.textBaseline = "middle";
 signContext.font = "700 66px sans-serif"; signContext.fillText("GLITCH CLAW", 384, 79);
 const signTexture = new THREE.CanvasTexture(signCanvas); signTexture.colorSpace = THREE.SRGBColorSpace;
-const sign = mesh(new THREE.PlaneGeometry(4.1, .86), new THREE.MeshBasicMaterial({ map: signTexture }), machine);
-sign.position.set(0, 4.52, 1.84);
+// 原本架在機頂時，桌機的寬畫面會把字切掉；放到底座中央又會被方向鍵蓋住。
+// 改嵌在玻璃櫃上緣的實體橫框，位置較低，而且不占用遊戲畫面與操作區。
+const sign = mesh(new THREE.PlaneGeometry(2.4, .38), new THREE.MeshBasicMaterial({ map: signTexture }), machine);
+sign.position.set(0, 4.2, 1.836);
 
-// 背景只留下幾台失焦感的機器，讓娃娃機仍是畫面中心。
+// 背景街機有完整輪廓、燈牌、螢幕與控制台，但材質和對比刻意壓低，
+// 讓它們看得出是遊樂園機台，又不會搶走中央娃娃機。
 for (let i = 0; i < 7; i++) {
   const x = -7.2 + i * 2.4;
-  const bg = box(1.45, 3.25, 1.25, mat(i % 2 ? 0x86bdb8 : 0xae9bd3, .62), x, 1.62, -4.6);
-  box(1.05, 1.25, .04, new THREE.MeshBasicMaterial({ color: i % 2 ? 0xf0c66f : 0x7f69b0 }), x, 2.05, -3.95);
-  bg.castShadow = false;
+  const cabinet = new THREE.Group();
+  cabinet.position.set(x, 0, -4.6);
+  cabinet.rotation.y = (i - 3) * -.018;
+  scene.add(cabinet);
+  const bodyColor = i % 2 ? 0x78aaa8 : 0x9682bd;
+  const glowColor = [0xf0c66f, 0x78d8cf, 0xe98176][i % 3];
+  const body = box(1.48, 2.65, 1.28, mat(bodyColor, .64), 0, 1.38, 0, cabinet);
+  body.castShadow = false;
+  box(1.34, .28, 1.34, mat(PAL.ink, .4, .18), 0, 2.82, .01, cabinet);
+  box(1.08, .38, .04, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.84, .68, cabinet).castShadow = false;
+  const screenMaterial = new THREE.MeshStandardMaterial({ color: 0x403859, emissive: glowColor, emissiveIntensity: .34, roughness: .38 });
+  box(1.06, 1.03, .045, screenMaterial, 0, 1.94, .66, cabinet).castShadow = false;
+  box(.92, .08, .025, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.33, .69, cabinet).castShadow = false;
+  const deck = box(1.28, .16, .55, mat(0xd7d1e4, .55), 0, 1.21, .77, cabinet);
+  deck.rotation.x = -.12;
+  const stick = mesh(new THREE.CylinderGeometry(.025, .025, .22, 10), darkMat, cabinet);
+  stick.position.set(-.28, 1.38, .84); stick.rotation.x = -.12;
+  sphere(cabinet, .07, glowColor, -.28, 1.5, .82);
+  sphere(cabinet, .055, PAL.coral, .25, 1.37, .84, [1, .55, 1]);
+  sphere(cabinet, .055, PAL.mint, .43, 1.36, .84, [1, .55, 1]);
+  box(.12, 2.35, .08, new THREE.MeshBasicMaterial({ color: glowColor }), -.63, 1.7, .67, cabinet).castShadow = false;
+  box(.12, 2.35, .08, new THREE.MeshBasicMaterial({ color: glowColor }), .63, 1.7, .67, cabinet).castShadow = false;
+  box(1.12, .14, 1.1, darkMat, 0, .08, 0, cabinet);
 }
 
 const textureLoader = new THREE.TextureLoader();
@@ -371,8 +398,39 @@ function updateGame(dt) {
 }
 
 function renderProgress() {
-  progressEl.innerHTML = PRIZES.map(prize => `<div class="prizeSlot ${Store.data.owned.includes(prize.id) ? "has" : ""}" title="${prize.name}"><img src="${prize.avatar}" alt="${prize.name}"></div>`).join("");
+  progressEl.innerHTML = PRIZES.map(prize => {
+    const owned = Store.data.owned.includes(prize.id);
+    return owned
+      ? `<div class="prizeSlot has" title="${prize.name}"><img src="${prize.avatar}" alt="${prize.name}"></div>`
+      : `<div class="prizeSlot" title="還沒夾到">？</div>`;
+  }).join("");
 }
+
+function openCollection() {
+  const owned = PRIZES.filter(prize => Store.data.owned.includes(prize.id));
+  collectionTitleEl.textContent = `收集進度　${owned.length} / ${PRIZES.length}`;
+  collectionListEl.innerHTML = owned.length
+    ? owned.map(prize => `<div class="collectionRow">
+        <img src="${prize.avatar}" alt="">
+        <div><div class="collectionName">${prize.name}</div><div class="collectionType">角色布偶</div></div>
+      </div>`).join("")
+    : `<div class="collectionEmpty">還沒夾到任何人，先對準一隻娃娃試試看。</div>`;
+  collectionEl.hidden = false;
+  collectionCloseButton.focus();
+}
+
+function closeCollection() {
+  collectionEl.hidden = true;
+  progressEl.focus();
+}
+
+progressEl.addEventListener("click", openCollection);
+progressEl.addEventListener("keydown", event => {
+  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openCollection(); }
+});
+collectionCloseButton.addEventListener("click", closeCollection);
+collectionEl.addEventListener("click", event => { if (event.target === collectionEl) closeCollection(); });
+addEventListener("keydown", event => { if (event.key === "Escape" && !collectionEl.hidden) closeCollection(); });
 
 const clock = new THREE.Clock();
 function animate() {

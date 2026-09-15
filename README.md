@@ -6,6 +6,7 @@
 
 - 電腦：方向鍵或 WASD 移動，空白鍵抓取。
 - 手機：使用畫面下方的方向鍵與「抓取」按鈕。
+- 點右上角的收集進度，可查看已經夾到的角色。
 - 獨立遊玩時，進度儲存在瀏覽器的 `localStorage`。
 - 嵌入 Larch 時，使用 `postMessage` 傳送 `claw:ready`、`claw:save` 與 `claw:exit`。
 
