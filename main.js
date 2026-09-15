@@ -13,6 +13,7 @@ const collectionListEl = $("#collectionList");
 const collectionCloseButton = $("#collectionClose");
 const exitButton = $("#exit");
 const embedded = window.self !== window.top;
+if (embedded) document.documentElement.classList.add("embedded");
 const THEME_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? "./assets/audio/glitch-park-theme.mp3"
   : "https://yazelin.github.io/glitch-park-claw/assets/audio/glitch-park-theme.mp3";
