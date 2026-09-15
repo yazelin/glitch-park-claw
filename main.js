@@ -29,7 +29,7 @@ scene.background = new THREE.Color(0xe8e4f2);
 scene.fog = new THREE.Fog(0xe8e4f2, 11, 23);
 
 const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 50);
-const cameraTarget = new THREE.Vector3(0, 2.25, 0);
+const cameraTarget = new THREE.Vector3(0, 2.65, 0);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -44,7 +44,7 @@ function resize() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.45 : 2));
   camera.aspect = innerWidth / innerHeight;
   camera.fov = narrow ? 47 : 39;
-  camera.position.set(narrow ? 0 : 0.15, narrow ? 3.05 : 2.8, narrow ? 11.25 : 8.1);
+  camera.position.set(narrow ? 0 : 0.15, narrow ? 3.5 : 3.25, narrow ? 12.15 : 8.75);
   camera.lookAt(cameraTarget);
   camera.updateProjectionMatrix();
 }
@@ -172,6 +172,15 @@ for (let i = 0; i <= 16; i++) {
 
 const machine = new THREE.Group();
 scene.add(machine);
+// 主機台整體抬高，底下補一段真正落地的直立機櫃。舊版只有 .72 高的基座，
+// 寬度卻有 4.7，看起來像展示櫃擺在一個方盒上，而不是完整的抓娃娃機。
+machine.position.y = .64;
+box(4.7, .64, 3.65, violetMat, 0, -.32, 0, machine);
+box(4.18, .43, .035, mat(0x70559e, .5), 0, -.32, 1.836, machine).castShadow = false;
+for (let x = -1.72; x <= 1.72; x += .43) {
+  const pixel = box(.16, .16, .025, new THREE.MeshBasicMaterial({ color: Math.round((x + 2) * 10) % 2 ? PAL.mint : 0xd9b8f0 }), x, -.32, 1.86, machine);
+  pixel.castShadow = false;
+}
 surfaceWithChute(4.7, .72, 3.65, violetMat, .36, machine);
 surfaceWithChute(4.46, .22, 3.35, paleMat, .78, machine);
 box(4.72, 0.36, 3.66, violetMat, 0, 4.46, 0, machine);
