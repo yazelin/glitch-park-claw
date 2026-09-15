@@ -13,10 +13,28 @@ const collectionListEl = $("#collectionList");
 const collectionCloseButton = $("#collectionClose");
 const exitButton = $("#exit");
 const embedded = window.self !== window.top;
+const THEME_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
+  ? "./assets/audio/glitch-park-theme.mp3"
+  : "https://yazelin.github.io/glitch-park-claw/assets/audio/glitch-park-theme.mp3";
+let themeAudio = null;
+
+// 同一首遊樂園主題曲由同一個播放層負責。獨立開啟時，本頁在瀏覽器允許的
+// 第一個使用者手勢後播放；嵌入 Larch 時不建立 Audio，而是請外層播放，
+// 切換扭蛋機、娃娃機或未來的小遊戲時，音樂才不會被 iframe 重置。
+function requestTheme(action, muted = false) {
+  if (embedded) {
+    parent.postMessage({ type: "glitch-park:music", action, track: "theme", url: new URL(THEME_URL, location.href).href, muted }, "*");
+    return;
+  }
+  themeAudio ||= Object.assign(new Audio(THEME_URL), { loop: true, preload: "metadata", volume: .27 });
+  if (action === "mute") themeAudio.muted = muted;
+  if (action === "play" && !muted) themeAudio.play().catch(() => {});
+}
 
 if (embedded) {
   exitButton.hidden = false;
   exitButton.addEventListener("click", () => parent.postMessage({ type: "claw:exit" }, "*"));
+  requestTheme("play");
 }
 
 const PAL = {
@@ -47,7 +65,7 @@ function resize() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.15 : 1.55));
   camera.aspect = innerWidth / innerHeight;
   camera.fov = narrow ? 47 : 39;
-  cameraBase.set(narrow ? 0 : 0.12, narrow ? 3.72 : 3.42, narrow ? 12.55 : 11.25);
+  cameraBase.set(narrow ? 0 : 0.12, narrow ? 3.68 : 3.4, narrow ? 11.8 : 10.35);
   camera.position.copy(cameraBase);
   camera.lookAt(cameraTarget);
   camera.updateProjectionMatrix();
@@ -87,7 +105,7 @@ const glitchAtlas = textureLoader.load("./assets/glitch-atlas.webp", () => {
   for (const view of atlasViews) view.needsUpdate = true;
 });
 glitchAtlas.colorSpace = THREE.SRGBColorSpace;
-function atlasView(index, aspect = 1) {
+function atlasView(index, aspect = 1, focusY = .5) {
   const view = glitchAtlas.clone();
   const column = index % 4;
   const rowFromTop = Math.floor(index / 4);
@@ -102,17 +120,17 @@ function atlasView(index, aspect = 1) {
   view.colorSpace = THREE.SRGBColorSpace;
   view.wrapS = view.wrapT = THREE.ClampToEdgeWrapping;
   view.repeat.set(repeatX, repeatY);
-  view.offset.set(tileX + (.25 - repeatX) / 2, tileY + (.5 - repeatY) / 2);
+  view.offset.set(tileX + (.25 - repeatX) / 2, tileY + (.5 - repeatY) * focusY);
   view.needsUpdate = true;
   atlasViews.push(view);
   return view;
 }
 
-function atlasMaterial(index, opacity = 1, aspect = 1) {
-  const key = `${index}:${opacity}:${aspect.toFixed(3)}`;
+function atlasMaterial(index, opacity = 1, aspect = 1, focusY = .5) {
+  const key = `${index}:${opacity}:${aspect.toFixed(3)}:${focusY.toFixed(2)}`;
   if (atlasMaterialCache.has(key)) return atlasMaterialCache.get(key);
   const material = new THREE.MeshBasicMaterial({
-    map: atlasView(index, aspect), transparent: opacity < 1, opacity, toneMapped: false,
+    map: atlasView(index, aspect, focusY), transparent: opacity < 1, opacity, toneMapped: false,
   });
   atlasMaterialCache.set(key, material);
   return material;
@@ -234,13 +252,31 @@ scene.add(machine);
 // 是直立長方形機台，而不是寬大的玻璃展示箱擺在矮方塊上。
 machine.position.y = 1.3;
 box(2.95, 1.3, 3.65, violetMat, 0, -.65, 0, machine);
-box(2.55, 1.08, .035, mat(0x70559e, .5), 0, -.65, 1.836, machine).castShadow = false;
-for (let x = -.99; x <= .99; x += .33) {
-  const pixel = box(.16, .34, .025, new THREE.MeshBasicMaterial({ color: Math.round((x + 2) * 10) % 2 ? PAL.mint : 0xd9b8f0 }), x, -.65, 1.86, machine);
-  pixel.castShadow = false;
+box(2.55, 1.08, .04, mat(0x70559e, .5), 0, -.65, 1.855, machine).castShadow = false;
+const lowerLightColors = [PAL.mint, 0xe6a6d6, PAL.amber];
+const lowerLightHeights = [.36, .58, .44, .68, .42, .56, .34];
+const lowerLightOffsets = [.05, -.03, .08, 0, -.07, .04, -.02];
+const lowerLightMaterials = lowerLightColors.map(color => new THREE.MeshStandardMaterial({
+  color, emissive: color, emissiveIntensity: 1.75, roughness: .24, metalness: .12,
+}));
+for (let i = 0; i < 7; i++) {
+  const x = -.99 + i * .33;
+  const height = lowerLightHeights[i];
+  const y = -.65 + lowerLightOffsets[i];
+  // 深色外框形成內凹燈槽；交錯的發光核心向前凸出，並用菱形燈帽
+  // 打破七根等長直條的單調輪廓。
+  const pocket = box(.23, height + .14, .075, darkMat, x, y, 1.89, machine);
+  pocket.castShadow = false;
+  const core = box(i % 2 ? .105 : .13, height, i % 2 ? .045 : .075, lowerLightMaterials[i % 3], x, y, i % 2 ? 1.925 : 1.955, machine);
+  core.castShadow = false;
+  const cap = box(.105, .105, .055, lowerLightMaterials[(i + 1) % 3], x, y + height / 2 - .015, 1.96, machine);
+  cap.rotation.z = Math.PI / 4;
+  cap.castShadow = false;
 }
 box(2.55, .055, .04, new THREE.MeshBasicMaterial({ color: PAL.mint }), 0, -.08, 1.865, machine).castShadow = false;
 box(2.55, .055, .04, new THREE.MeshBasicMaterial({ color: 0xe6a6d6 }), 0, -1.22, 1.865, machine).castShadow = false;
+const lowerGlowLeft = new THREE.PointLight(PAL.mint, 1.4, 1.7, 2); lowerGlowLeft.position.set(-.62, -.6, 2.06); machine.add(lowerGlowLeft);
+const lowerGlowRight = new THREE.PointLight(0xe6a6d6, 1.25, 1.7, 2); lowerGlowRight.position.set(.62, -.6, 2.06); machine.add(lowerGlowRight);
 surfaceWithChute(2.95, .72, 3.65, violetMat, .36, machine);
 surfaceWithChute(2.71, .22, 3.35, paleMat, .78, machine);
 box(2.97, 0.36, 3.66, violetMat, 0, 4.46, 0, machine);
@@ -256,22 +292,8 @@ box(0.13, 0.13, 3.25, darkMat, 1.33, 4.2, 0, machine);
 box(2.59, 3.25, 0.025, glassMat, 0, 2.55, 1.67, machine).castShadow = false;
 box(0.025, 3.25, 3.2, glassMat, -1.34, 2.55, 0, machine).castShadow = false;
 box(0.025, 3.25, 3.2, glassMat, 1.34, 2.55, 0, machine).castShadow = false;
-
-// 廣告固定在櫃內最深處的實體背板。
-// 娃娃、吊爪與纜線會自然從它前方經過，讓前後深度一眼可辨。
-const innerBackWall = box(2.38, 2.93, .07, mat(0xe1dcef, .78), 0, 2.59, -1.59, machine);
-innerBackWall.castShadow = false;
-innerBackWall.receiveShadow = false;
-for (let i = 0; i < 3; i++) {
-  const x = (i - 1) * .76;
-  const frame = box(.69, .69, .045, darkMat, x, 3.04, -1.535, machine);
-  frame.castShadow = false;
-  const artwork = mesh(new THREE.PlaneGeometry(.61, .61), atlasMaterial([0, 1, 6][i]), machine);
-  artwork.position.set(x, 3.04, -1.507);
-  artwork.castShadow = false;
-}
-box(2.14, .055, .035, new THREE.MeshBasicMaterial({ color: PAL.mint }), 0, 1.25, -1.505, machine).castShadow = false;
-box(2.14, .055, .035, new THREE.MeshBasicMaterial({ color: 0xe6a6d6 }), 0, 3.93, -1.505, machine).castShadow = false;
+// 後側只留透明玻璃，玩家可以越過娃娃與吊爪直接看見樂園後牆。
+box(2.59, 3.25, 0.025, glassMat, 0, 2.55, -1.67, machine).castShadow = false;
 
 // 落物口不是貼在桌上的黑平台：四條框圍出真正的開口，內壁一路往下，
 // 再連到機台正面的取物箱。娃娃落下時會實際沉入這個深度。
@@ -348,7 +370,8 @@ const signTexture = new THREE.CanvasTexture(signCanvas); signTexture.colorSpace 
 // 改嵌在玻璃櫃上緣的實體橫框，位置較低，而且不占用遊戲畫面與操作區。
 const signBack = box(1.55, .46, .13, mat(PAL.ink, .3, .28), .58, .39, 1.76, machine);
 const sign = mesh(new THREE.PlaneGeometry(1.42, .33), new THREE.MeshBasicMaterial({ map: signTexture }), machine);
-sign.position.set(.58, .39, 1.836);
+// 底板正面在 z≈1.825；留出明確間距，避免兩個面爭用同一深度而閃爍。
+sign.position.set(.58, .39, 1.885);
 const signLight = new THREE.PointLight(PAL.mint, 2.6, 3.2, 1.8); signLight.position.set(.58, .48, 2.02); machine.add(signLight);
 
 // 機台正面的像素燈框呼應格莉奇的青色髮飾。
@@ -357,8 +380,8 @@ box(.045, 3.1, .045, trimMaterial, -1.23, 2.56, 1.71, machine).castShadow = fals
 box(.045, 3.1, .045, trimMaterial, 1.23, 2.56, 1.71, machine).castShadow = false;
 box(2.45, .045, .045, trimMaterial, 0, 4.08, 1.71, machine).castShadow = false;
 
-// 七台背景街機各自從 atlas 取不同廣告，貼在螢幕、頂部燈牌、正面下櫃與側板。
-// 機身仍稍微壓低亮度，讓廣告豐富遠景，但不會搶走中央娃娃機的操作焦點。
+// 七台背景機器也使用真正的夾娃娃機結構。角色圖只留在頂牌和下櫃側面；
+// 正面是透明玻璃，能看見內凹空間、獎品、吊軌與小夾爪。
 for (let i = 0; i < 7; i++) {
   const x = -7.2 + i * 2.4;
   const cabinet = new THREE.Group();
@@ -367,35 +390,61 @@ for (let i = 0; i < 7; i++) {
   scene.add(cabinet);
   const bodyColor = i % 2 ? 0x78aaa8 : 0x9682bd;
   const glowColor = [0xf0c66f, 0x78d8cf, 0xe98176][i % 3];
-  const body = box(1.48, 2.65, 1.28, mat(bodyColor, .64), 0, 1.38, 0, cabinet);
+  const cabinetMat = mat(bodyColor, .64);
+  const body = box(1.48, .82, 1.28, cabinetMat, 0, .47, 0, cabinet);
   body.castShadow = false;
   box(1.34, .42, 1.34, mat(PAL.ink, .4, .18), 0, 2.83, .01, cabinet);
   box(1.16, .46, .045, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.84, .68, cabinet).castShadow = false;
-  const marquee = mesh(new THREE.PlaneGeometry(1.05, .35), atlasMaterial((i + 1) % 8, 1, 1.05 / .35), cabinet);
+  const marqueeIndex = (i + 1) % 8;
+  const marqueeFocus = marqueeIndex === 6 ? .5 : .82;
+  const marquee = mesh(new THREE.PlaneGeometry(1.05, .35), atlasMaterial(marqueeIndex, 1, 1.05 / .35, marqueeFocus), cabinet);
   marquee.position.set(0, 2.84, .707); marquee.castShadow = false;
-  box(1.16, 1.13, .045, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 1.94, .66, cabinet).castShadow = false;
-  const screen = mesh(new THREE.PlaneGeometry(1.04, 1.01), atlasMaterial(i, 1, 1.04 / 1.01), cabinet);
-  screen.position.set(0, 1.94, .689); screen.castShadow = false;
-  box(.92, .08, .025, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.33, .69, cabinet).castShadow = false;
-  const deck = box(1.28, .16, .55, mat(0xd7d1e4, .55), 0, 1.21, .77, cabinet);
+  const innerShadowMaterial = new THREE.MeshBasicMaterial({ color: 0x241d32, transparent: true, opacity: .34, depthWrite: false });
+  box(1.12, 1.58, .025, innerShadowMaterial, 0, 1.77, -.56, cabinet).castShadow = false;
+  box(1.2, .08, 1.05, mat(0xd7d1e4, .72), 0, .94, 0, cabinet).castShadow = false;
+  for (const sideX of [-.63, .63]) for (const sideZ of [-.55, .55]) {
+    box(.1, 1.72, .1, darkMat, sideX, 1.77, sideZ, cabinet).castShadow = false;
+  }
+  box(1.2, .09, .09, darkMat, 0, 2.59, .55, cabinet).castShadow = false;
+  box(1.2, .09, .09, darkMat, 0, 2.59, -.55, cabinet).castShadow = false;
+  box(1.18, 1.58, .018, glassMat, 0, 1.77, .61, cabinet).castShadow = false;
+  box(.018, 1.58, 1.08, glassMat, -.69, 1.77, 0, cabinet).castShadow = false;
+  box(.018, 1.58, 1.08, glassMat, .69, 1.77, 0, cabinet).castShadow = false;
+
+  // 小獎品與吊爪建立玻璃後方的深度，材質和幾何沿用共用資源。
+  const prizeColors = [PAL.mint, 0xe6a6d6, PAL.amber];
+  for (let p = 0; p < 3; p++) {
+    const miniPrize = sphere(cabinet, .14, prizeColors[(i + p) % 3], (p - 1) * .34, 1.11 + (p % 2) * .06, p === 1 ? -.2 : .16, [1, .9, .84]);
+    miniPrize.castShadow = false;
+  }
+  box(.92, .045, .045, metalMat, 0, 2.48, -.04, cabinet).castShadow = false;
+  box(.035, .58, .035, darkMat, (i % 3 - 1) * .22, 2.17, -.04, cabinet).castShadow = false;
+  const miniClaw = new THREE.Group(); miniClaw.position.set((i % 3 - 1) * .22, 1.83, -.04); cabinet.add(miniClaw);
+  sphere(miniClaw, .095, 0xbfc1d4, 0, 0, 0, [1.15, .82, 1]);
+  for (const side of [-1, 1]) {
+    const arm = box(.035, .36, .035, metalMat, side * .09, -.19, 0, miniClaw);
+    arm.rotation.z = side * -.3;
+    const tip = sphere(miniClaw, .035, 0xbfc1d4, side * .145, -.37, 0);
+    tip.castShadow = false;
+  }
+
+  const deck = box(1.28, .16, .55, mat(0xd7d1e4, .55), 0, .92, .77, cabinet);
   deck.rotation.x = -.12;
   const stick = mesh(new THREE.CylinderGeometry(.025, .025, .22, 10), darkMat, cabinet);
-  stick.position.set(-.28, 1.38, .84); stick.rotation.x = -.12;
-  sphere(cabinet, .07, glowColor, -.28, 1.5, .82);
-  sphere(cabinet, .055, PAL.coral, .25, 1.37, .84, [1, .55, 1]);
-  sphere(cabinet, .055, PAL.mint, .43, 1.36, .84, [1, .55, 1]);
-  box(1.08, .68, .045, new THREE.MeshBasicMaterial({ color: 0x302740 }), 0, .69, .66, cabinet).castShadow = false;
-  const lowerAd = mesh(new THREE.PlaneGeometry(.96, .56), atlasMaterial((i + 4) % 8, 1, .96 / .56), cabinet);
-  lowerAd.position.set(0, .69, .688); lowerAd.castShadow = false;
+  stick.position.set(-.28, 1.08, .84); stick.rotation.x = -.12;
+  sphere(cabinet, .07, glowColor, -.28, 1.2, .82);
+  sphere(cabinet, .055, PAL.coral, .25, 1.07, .84, [1, .55, 1]);
+  sphere(cabinet, .055, PAL.mint, .43, 1.06, .84, [1, .55, 1]);
+  box(.42, .16, .045, darkMat, 0, .49, .665, cabinet).castShadow = false;
+  box(.045, .1, .025, new THREE.MeshBasicMaterial({ color: glowColor }), 0, .49, .695, cabinet).castShadow = false;
   for (const side of [-1, 1]) {
-    box(.045, 1.42, .9, new THREE.MeshBasicMaterial({ color: glowColor }), side * .746, 1.82, 0, cabinet).castShadow = false;
-    const sideAd = mesh(new THREE.PlaneGeometry(.78, 1.28), atlasMaterial((i + (side < 0 ? 2 : 3)) % 8, 1, .78 / 1.28), cabinet);
-    sideAd.position.set(side * .77, 1.82, 0);
+    const sideAd = mesh(new THREE.PlaneGeometry(.5, .5), atlasMaterial((i + (side < 0 ? 2 : 3)) % 8), cabinet);
+    sideAd.position.set(side * .751, .48, 0);
     sideAd.rotation.y = side * Math.PI / 2;
     sideAd.castShadow = false;
   }
-  box(.12, 2.35, .08, new THREE.MeshBasicMaterial({ color: glowColor }), -.63, 1.7, .67, cabinet).castShadow = false;
-  box(.12, 2.35, .08, new THREE.MeshBasicMaterial({ color: glowColor }), .63, 1.7, .67, cabinet).castShadow = false;
+  box(.055, 1.68, .045, new THREE.MeshBasicMaterial({ color: glowColor }), -.625, 1.77, .625, cabinet).castShadow = false;
+  box(.055, 1.68, .045, new THREE.MeshBasicMaterial({ color: glowColor }), .625, 1.77, .625, cabinet).castShadow = false;
   box(1.12, .14, 1.1, darkMat, 0, .08, 0, cabinet);
 }
 
@@ -568,8 +617,10 @@ const railZ = box(.11, .09, 2.75, metalMat, 0, 3.93, 0, machine);
 const crane = new THREE.Group();
 crane.position.set(0, 0, .2); machine.add(crane);
 const trolley = box(.44, .24, .44, darkMat, 0, 3.91, 0, crane);
-const cable = mesh(new THREE.CylinderGeometry(.018, .018, 1, 10), darkMat, crane);
-const claw = new THREE.Group(); crane.add(claw);
+// 軌道車維持水平，纜線以下則以懸吊點為軸保留慣性擺動。
+const suspension = new THREE.Group(); suspension.position.y = 3.78; crane.add(suspension);
+const cable = mesh(new THREE.CylinderGeometry(.018, .018, 1, 10), darkMat, suspension);
+const claw = new THREE.Group(); suspension.add(claw);
 const clawHead = mesh(new THREE.CylinderGeometry(.18, .22, .28, 20), metalMat, claw);
 const prongs = [];
 function placeBetween(object, ax, ay, bx, by) {
@@ -593,9 +644,9 @@ for (let i = 0; i < 3; i++) {
 
 let clawY = 3.34;
 function setClawHeight(y) {
-  clawY = y; claw.position.y = y;
+  clawY = y; claw.position.y = y - 3.78;
   const length = Math.max(.08, 3.78 - y);
-  cable.scale.y = length; cable.position.y = y + length / 2;
+  cable.scale.y = length; cable.position.y = -length / 2;
 }
 setClawHeight(clawY);
 
@@ -611,6 +662,26 @@ function setProng(open) {
   }
 }
 setProng(1);
+
+const swing = { velocityX: 0, velocityZ: 0 };
+const previousCranePosition = new THREE.Vector2(crane.position.x, crane.position.z);
+function updateClawSwing(dt) {
+  const safeDt = Math.max(dt, .001);
+  const moveX = (crane.position.x - previousCranePosition.x) / safeDt;
+  const moveZ = (crane.position.z - previousCranePosition.y) / safeDt;
+  previousCranePosition.set(crane.position.x, crane.position.z);
+  let targetX = THREE.MathUtils.clamp(moveZ * .065, -.14, .14);
+  let targetZ = THREE.MathUtils.clamp(-moveX * .065, -.14, .14);
+  if (phase === "dropping" || phase === "closing") {
+    targetX += Math.sin(phaseTime * 5.1) * .018;
+    targetZ += Math.cos(phaseTime * 4.7) * .014;
+  }
+  // 阻尼刻意低於臨界值，停止移動後會越過中心一兩次，再逐漸靜止。
+  swing.velocityX += ((targetX - suspension.rotation.x) * 22 - swing.velocityX * 5.4) * dt;
+  swing.velocityZ += ((targetZ - suspension.rotation.z) * 22 - swing.velocityZ * 5.4) * dt;
+  suspension.rotation.x = THREE.MathUtils.clamp(suspension.rotation.x + swing.velocityX * dt, -.17, .17);
+  suspension.rotation.z = THREE.MathUtils.clamp(suspension.rotation.z + swing.velocityZ * dt, -.17, .17);
+}
 
 const held = new Set();
 const stickInput = { x: 0, z: 0 };
@@ -634,10 +705,24 @@ function beep(frequency, duration = .09, volume = .04, type = "sine") {
 }
 soundButton.addEventListener("click", () => {
   soundEnabled = !soundEnabled;
-  soundButton.textContent = soundEnabled ? "音效：開" : "音效：關";
+  soundButton.textContent = soundEnabled ? "聲音：開" : "聲音：關";
   soundButton.setAttribute("aria-pressed", String(!soundEnabled));
+  requestTheme("mute", !soundEnabled);
+  if (soundEnabled) requestTheme("play");
   if (soundEnabled) beep(620, .08, .035);
 });
+
+if (!embedded) {
+  requestTheme("play");
+  const unlockTheme = () => requestTheme("play", !soundEnabled);
+  addEventListener("pointerdown", unlockTheme, { once: true });
+  addEventListener("keydown", unlockTheme, { once: true });
+  addEventListener("visibilitychange", () => {
+    if (!themeAudio) return;
+    if (document.hidden) themeAudio.pause();
+    else requestTheme("play", !soundEnabled);
+  });
+}
 
 addEventListener("keydown", event => {
   if (keyMap[event.key]) {
@@ -791,6 +876,8 @@ function resetRound() {
   }
   caught = null;
   crane.position.set(0, 0, .2); setClawHeight(3.34); setProng(1);
+  previousCranePosition.set(crane.position.x, crane.position.z);
+  suspension.rotation.set(0, 0, 0); swing.velocityX = swing.velocityZ = 0;
   phase = "waiting"; updateControlLights(); setStatus("請先點擊機台上的「投幣孔」。");
 }
 revealEl.addEventListener("click", event => { if (event.target.closest("button")) resetRound(); });
@@ -897,6 +984,7 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), .04);
   updateGame(dt);
+  updateClawSwing(dt);
   const time = performance.now() * .001;
   const idleLook = phase === "waiting";
   const targetLookX = idleLook ? look.targetX : 0;
@@ -928,12 +1016,13 @@ if (new URLSearchParams(location.search).has("test")) {
     return { x: rect.left + (point.x + 1) * rect.width / 2, y: rect.top + (1 - point.y) * rect.height / 2 };
   };
   window.__clawTest = {
-    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, look: { x: look.x, y: look.y, targetX: look.targetX, targetY: look.targetY }, cues: { coin: coinSlotMaterial.emissiveIntensity, grab: grabMaterial.emissiveIntensity, coinVisible: coinToken.visible }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
+    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z, swingX: suspension.rotation.x, swingZ: suspension.rotation.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, look: { x: look.x, y: look.y, targetX: look.targetX, targetY: look.targetY }, cues: { coin: coinSlotMaterial.emissiveIntensity, grab: grabMaterial.emissiveIntensity, coinVisible: coinToken.visible }, music: { embedded, created: Boolean(themeAudio), playing: Boolean(themeAudio && !themeAudio.paused), muted: Boolean(themeAudio?.muted) }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
     getDolls: () => dolls.map(doll => ({ id: doll.userData.prize.id, parent: doll.parent === machine ? "machine" : "claw", visible: doll.visible, x: doll.position.x, y: doll.position.y, z: doll.position.z })),
     getControlPoint: name => controlPoint({ coin: coinSlot, grab: grabButton, joystick: joystickKnob }[name]),
     setClaw: (x, z) => { if (phase !== "idle") return false; crane.position.x = THREE.MathUtils.clamp(Number(x), -.94, .94); crane.position.z = THREE.MathUtils.clamp(Number(z), -1.05, 1.12); return true; },
     insertCoin,
     forceWin: id => { if (!PRIZES.some(prize => prize.id === id) || !["waiting", "idle"].includes(phase)) return false; if (phase === "waiting") insertCoin(); forcedPrizeId = id; startGrab(); return true; },
+    advance: seconds => { for (let elapsed = 0; elapsed < Number(seconds); elapsed += .02) { updateGame(.02); updateClawSwing(.02); } return phase; },
     reset: resetRound,
   };
 }
