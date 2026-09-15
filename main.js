@@ -38,13 +38,14 @@ if (embedded) {
 }
 
 const PAL = {
-  ink: 0x453a5e, violet: 0x9375cf, lavender: 0xd9d1ed, pale: 0xf7f5fb,
-  mint: 0x65d6cd, coral: 0xe98176, amber: 0xf0c66f, floor: 0xcfc7e3,
+  ink: 0x241832, violet: 0x684a96, lavender: 0xb9add5, pale: 0xf7f5fb,
+  mint: 0x65e6da, coral: 0xf1849c, amber: 0xffd477, floor: 0x21172f,
 };
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xe8e4f2);
-scene.fog = new THREE.Fog(0xe8e4f2, 11, 23);
+scene.background = new THREE.Color(0x100b1b);
+// 霧從廣告牆後方才開始，避免遠景照片被混成灰白色。
+scene.fog = new THREE.Fog(0x171023, 18, 30);
 
 const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 50);
 const cameraBase = new THREE.Vector3();
@@ -65,7 +66,7 @@ function resize() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.15 : 1.55));
   camera.aspect = innerWidth / innerHeight;
   camera.fov = narrow ? 47 : 39;
-  cameraBase.set(narrow ? 0 : 0.12, narrow ? 3.68 : 3.4, narrow ? 11.8 : 10.35);
+  cameraBase.set(narrow ? 0 : 0.08, narrow ? 3.74 : 3.48, narrow ? 10 : 8.95);
   camera.position.copy(cameraBase);
   camera.lookAt(cameraTarget);
   camera.updateProjectionMatrix();
@@ -73,8 +74,8 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x82779c, 2.15));
-const key = new THREE.DirectionalLight(0xfff7e8, 3.2);
+scene.add(new THREE.HemisphereLight(0xbeb3dc, 0x10091b, 1.05));
+const key = new THREE.DirectionalLight(0xded7ff, 1.8);
 key.position.set(4, 7, 6);
 key.castShadow = !reducedRendering;
 key.shadow.mapSize.set(512, 512);
@@ -99,12 +100,18 @@ const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xdffbff, transparent: 
 // image/source 仍指向同一份 WebP，因此瀏覽器只需要下載一次圖片。
 const textureLoader = new THREE.TextureLoader();
 textureLoader.setCrossOrigin(null);
-const atlasViews = [];
 const atlasMaterialCache = new Map();
-const glitchAtlas = textureLoader.load("./assets/glitch-atlas.webp", () => {
-  for (const view of atlasViews) view.needsUpdate = true;
+const pendingAtlasMaterials = [];
+let glitchAtlas = null;
+textureLoader.load("./assets/glitch-atlas.webp", texture => {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  glitchAtlas = texture;
+  for (const item of pendingAtlasMaterials) {
+    item.material.map = atlasView(item.index, item.aspect, item.focusY);
+    item.material.needsUpdate = true;
+  }
+  pendingAtlasMaterials.length = 0;
 });
-glitchAtlas.colorSpace = THREE.SRGBColorSpace;
 function atlasView(index, aspect = 1, focusY = .5) {
   const view = glitchAtlas.clone();
   const column = index % 4;
@@ -117,39 +124,48 @@ function atlasView(index, aspect = 1, focusY = .5) {
   // 拉寬、壓扁；offset 則讓裁切維持在圖格中央。
   if (aspect > 1) repeatY /= aspect;
   else if (aspect < 1) repeatX *= aspect;
-  view.colorSpace = THREE.SRGBColorSpace;
   view.wrapS = view.wrapT = THREE.ClampToEdgeWrapping;
   view.repeat.set(repeatX, repeatY);
   view.offset.set(tileX + (.25 - repeatX) / 2, tileY + (.5 - repeatY) * focusY);
   view.needsUpdate = true;
-  atlasViews.push(view);
   return view;
 }
 
 function atlasMaterial(index, opacity = 1, aspect = 1, focusY = .5) {
   const key = `${index}:${opacity}:${aspect.toFixed(3)}:${focusY.toFixed(2)}`;
   if (atlasMaterialCache.has(key)) return atlasMaterialCache.get(key);
-  const material = new THREE.MeshBasicMaterial({
-    map: atlasView(index, aspect, focusY), transparent: opacity < 1, opacity, toneMapped: false,
-  });
+  const material = new THREE.MeshBasicMaterial({ transparent: opacity < 1, opacity, toneMapped: false, fog: false });
+  if (glitchAtlas) material.map = atlasView(index, aspect, focusY);
+  else pendingAtlasMaterials.push({ material, index, aspect, focusY });
   atlasMaterialCache.set(key, material);
   return material;
 }
 
-const avatarAtlasViews = [];
-const avatarAtlas = textureLoader.load("./assets/avatar-atlas.webp", () => {
-  for (const view of avatarAtlasViews) view.needsUpdate = true;
+const pendingAvatarMaterials = [];
+let avatarAtlas = null;
+textureLoader.load("./assets/avatar-atlas.webp", texture => {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  avatarAtlas = texture;
+  for (const item of pendingAvatarMaterials) {
+    item.material.map = avatarAtlasView(item.index);
+    item.material.needsUpdate = true;
+  }
+  pendingAvatarMaterials.length = 0;
 });
-avatarAtlas.colorSpace = THREE.SRGBColorSpace;
 function avatarAtlasView(index) {
   const view = avatarAtlas.clone();
-  view.colorSpace = THREE.SRGBColorSpace;
   view.wrapS = view.wrapT = THREE.ClampToEdgeWrapping;
   view.repeat.set(.25, .5);
   view.offset.set((index % 4) * .25, Math.floor(index / 4) === 0 ? .5 : 0);
   view.needsUpdate = true;
-  avatarAtlasViews.push(view);
   return view;
+}
+
+function avatarMaterial(index) {
+  const material = new THREE.MeshBasicMaterial({ transparent: true });
+  if (avatarAtlas) material.map = avatarAtlasView(index);
+  else pendingAvatarMaterials.push({ material, index });
+  return material;
 }
 
 function mesh(geometry, material, parent = scene) {
@@ -184,10 +200,10 @@ const floorCanvas = document.createElement("canvas");
 floorCanvas.width = floorCanvas.height = 256;
 const floorContext = floorCanvas.getContext("2d");
 for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-  floorContext.fillStyle = (x + y) % 2 ? "#ddd6ed" : "#efe9dc";
+  floorContext.fillStyle = (x + y) % 2 ? "#21172f" : "#302141";
   floorContext.fillRect(x * 64, y * 64, 64, 64);
 }
-floorContext.strokeStyle = "rgba(105,87,145,.12)"; floorContext.lineWidth = 3;
+floorContext.strokeStyle = "rgba(141,232,224,.11)"; floorContext.lineWidth = 3;
 for (let n = 0; n <= 256; n += 64) { floorContext.beginPath(); floorContext.moveTo(n, 0); floorContext.lineTo(n, 256); floorContext.stroke(); floorContext.beginPath(); floorContext.moveTo(0, n); floorContext.lineTo(256, n); floorContext.stroke(); }
 const floorTexture = new THREE.CanvasTexture(floorCanvas);
 floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; floorTexture.repeat.set(9, 9); floorTexture.colorSpace = THREE.SRGBColorSpace;
@@ -200,21 +216,21 @@ const wallCanvas = document.createElement("canvas");
 wallCanvas.width = 1024; wallCanvas.height = 512;
 const wallContext = wallCanvas.getContext("2d");
 const wallGradient = wallContext.createLinearGradient(0, 0, 0, 512);
-wallGradient.addColorStop(0, "#d9d4ec"); wallGradient.addColorStop(.55, "#c9c1e1"); wallGradient.addColorStop(1, "#a99bc9");
+wallGradient.addColorStop(0, "#130c21"); wallGradient.addColorStop(.55, "#221334"); wallGradient.addColorStop(1, "#382052");
 wallContext.fillStyle = wallGradient; wallContext.fillRect(0, 0, 1024, 512);
-wallContext.fillStyle = "rgba(255,255,255,.18)";
+wallContext.fillStyle = "rgba(101,230,218,.18)";
 for (let i = 0; i < 28; i++) wallContext.fillRect(24 + (i * 137) % 970, 24 + (i * 83) % 280, 12 + i % 3 * 7, 12 + i % 3 * 7);
-wallContext.strokeStyle = "rgba(91,72,132,.18)"; wallContext.lineWidth = 3;
+wallContext.strokeStyle = "rgba(193,151,255,.28)"; wallContext.lineWidth = 3;
 for (let y = 74; y < 460; y += 82) {
   wallContext.beginPath();
   wallContext.moveTo(0, y); wallContext.lineTo(155, y); wallContext.lineTo(190, y + 22);
   wallContext.lineTo(470, y + 22); wallContext.lineTo(505, y); wallContext.lineTo(1024, y);
   wallContext.stroke();
 }
-wallContext.strokeStyle = "rgba(101,214,205,.35)"; wallContext.lineWidth = 9;
+wallContext.strokeStyle = "rgba(101,230,218,.55)"; wallContext.lineWidth = 9;
 wallContext.beginPath(); wallContext.arc(512, 515, 360, Math.PI, Math.PI * 2); wallContext.stroke();
 const wallTexture = new THREE.CanvasTexture(wallCanvas); wallTexture.colorSpace = THREE.SRGBColorSpace;
-const backWall = mesh(new THREE.PlaneGeometry(20, 8), new THREE.MeshBasicMaterial({ map: wallTexture }), scene);
+const backWall = mesh(new THREE.PlaneGeometry(32, 13), new THREE.MeshBasicMaterial({ map: wallTexture }), scene);
 backWall.position.set(0, 3.7, -6.25); backWall.castShadow = false;
 
 // 七張角色廣告和七台背景機器一一對齊。影像都來自同一張 atlas，
@@ -225,22 +241,25 @@ for (let i = 0; i < 7; i++) {
   const y = i % 2 ? 4.08 : 3.95;
   const accent = [PAL.mint, PAL.coral, PAL.amber][i % 3];
   const frame = box(1.78, 1.78, .1, darkMat, x, y, -6.13); frame.castShadow = false;
-  const innerFrame = box(1.62, 1.62, .035, new THREE.MeshBasicMaterial({ color: accent }), x, y, -6.07);
+  const adGlowMaterial = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 2.1, roughness: .28 });
+  const innerFrame = box(1.62, 1.62, .035, adGlowMaterial, x, y, -6.07);
   innerFrame.castShadow = false;
   const poster = mesh(new THREE.PlaneGeometry(1.49, 1.49), atlasMaterial(wallAdOrder[i]));
   poster.position.set(x, y, -6.045); poster.castShadow = false;
   for (const cornerX of [-.77, .77]) for (const cornerY of [-.77, .77]) {
-    const pixel = box(.12, .12, .035, new THREE.MeshBasicMaterial({ color: i % 2 ? PAL.mint : 0xe6a6d6 }), x + cornerX, y + cornerY, -6.015);
+    const pixelColor = i % 2 ? PAL.mint : 0xe6a6d6;
+    const pixel = box(.12, .12, .035, new THREE.MeshStandardMaterial({ color: pixelColor, emissive: pixelColor, emissiveIntensity: 2.4 }), x + cornerX, y + cornerY, -6.015);
     pixel.castShadow = false;
   }
 }
 
 // 懸掛燈串建立遊樂園的縱深；燈泡只發光，不投動態陰影。
 const festoon = new THREE.Group(); scene.add(festoon);
-const cordCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-8, 5.4, -3.7), new THREE.Vector3(0, 4.85, -4.2), new THREE.Vector3(8, 5.4, -3.7)]);
+// 纜線端點延伸到最大桌機視野之外，畫面內不會再看到懸空的線頭。
+const cordCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-15, 5.85, -3.7), new THREE.Vector3(0, 4.85, -4.2), new THREE.Vector3(15, 5.85, -3.7)]);
 const cord = mesh(new THREE.TubeGeometry(cordCurve, 40, .018, 6, false), darkMat, festoon); cord.castShadow = false;
-for (let i = 0; i <= 16; i++) {
-  const point = cordCurve.getPoint(i / 16);
+for (let i = 0; i <= 30; i++) {
+  const point = cordCurve.getPoint(i / 30);
   const bulbColor = i % 3 === 0 ? PAL.mint : i % 3 === 1 ? PAL.amber : 0xe6a6d6;
   const bulb = sphere(festoon, .07, bulbColor, point.x, point.y - .09, point.z, [1, 1.18, 1]);
   bulb.material.emissive = new THREE.Color(bulbColor); bulb.material.emissiveIntensity = 1.1; bulb.castShadow = false;
@@ -368,11 +387,12 @@ signContext.font = "600 25px sans-serif"; signContext.fillText("格莉奇遊樂�
 const signTexture = new THREE.CanvasTexture(signCanvas); signTexture.colorSpace = THREE.SRGBColorSpace;
 // 原本架在機頂時，桌機的寬畫面會把字切掉；放到底座中央又會被方向鍵蓋住。
 // 改嵌在玻璃櫃上緣的實體橫框，位置較低，而且不占用遊戲畫面與操作區。
-const signBack = box(1.55, .46, .13, mat(PAL.ink, .3, .28), .58, .39, 1.76, machine);
+const signBack = box(1.55, .46, .12, mat(PAL.ink, .3, .28), .58, .39, 1.91, machine);
 const sign = mesh(new THREE.PlaneGeometry(1.42, .33), new THREE.MeshBasicMaterial({ map: signTexture }), machine);
-// 底板正面在 z≈1.825；留出明確間距，避免兩個面爭用同一深度而閃爍。
-sign.position.set(.58, .39, 1.885);
-const signLight = new THREE.PointLight(PAL.mint, 2.6, 3.2, 1.8); signLight.position.set(.58, .48, 2.02); machine.add(signLight);
+// 下櫃面板正面在 z≈1.875。整組招牌往前移，圖面與任何周邊模型至少相隔
+// 0.1，避免斜視角或低精度深度緩衝時再次出現 z-fighting。
+sign.position.set(.58, .39, 1.98);
+const signLight = new THREE.PointLight(PAL.mint, 2.6, 3.2, 1.8); signLight.position.set(.58, .48, 2.12); machine.add(signLight);
 
 // 機台正面的像素燈框呼應格莉奇的青色髮飾。
 const trimMaterial = new THREE.MeshStandardMaterial({ color: PAL.mint, emissive: PAL.mint, emissiveIntensity: 1.25, roughness: .3 });
@@ -388,20 +408,21 @@ for (let i = 0; i < 7; i++) {
   cabinet.position.set(x, 0, -4.6);
   cabinet.rotation.y = (i - 3) * -.018;
   scene.add(cabinet);
-  const bodyColor = i % 2 ? 0x78aaa8 : 0x9682bd;
+  const bodyColor = i % 2 ? 0x203d42 : 0x35264e;
   const glowColor = [0xf0c66f, 0x78d8cf, 0xe98176][i % 3];
   const cabinetMat = mat(bodyColor, .64);
   const body = box(1.48, .82, 1.28, cabinetMat, 0, .47, 0, cabinet);
   body.castShadow = false;
   box(1.34, .42, 1.34, mat(PAL.ink, .4, .18), 0, 2.83, .01, cabinet);
-  box(1.16, .46, .045, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.84, .68, cabinet).castShadow = false;
+  const cabinetGlowMat = new THREE.MeshStandardMaterial({ color: glowColor, emissive: glowColor, emissiveIntensity: 2.35, roughness: .25 });
+  box(1.16, .46, .045, cabinetGlowMat, 0, 2.84, .68, cabinet).castShadow = false;
   const marqueeIndex = (i + 1) % 8;
   const marqueeFocus = marqueeIndex === 6 ? .5 : .82;
   const marquee = mesh(new THREE.PlaneGeometry(1.05, .35), atlasMaterial(marqueeIndex, 1, 1.05 / .35, marqueeFocus), cabinet);
   marquee.position.set(0, 2.84, .707); marquee.castShadow = false;
   const innerShadowMaterial = new THREE.MeshBasicMaterial({ color: 0x241d32, transparent: true, opacity: .34, depthWrite: false });
   box(1.12, 1.58, .025, innerShadowMaterial, 0, 1.77, -.56, cabinet).castShadow = false;
-  box(1.2, .08, 1.05, mat(0xd7d1e4, .72), 0, .94, 0, cabinet).castShadow = false;
+  box(1.2, .08, 1.05, mat(0x5b4c70, .72), 0, .94, 0, cabinet).castShadow = false;
   for (const sideX of [-.63, .63]) for (const sideZ of [-.55, .55]) {
     box(.1, 1.72, .1, darkMat, sideX, 1.77, sideZ, cabinet).castShadow = false;
   }
@@ -428,7 +449,7 @@ for (let i = 0; i < 7; i++) {
     tip.castShadow = false;
   }
 
-  const deck = box(1.28, .16, .55, mat(0xd7d1e4, .55), 0, .92, .77, cabinet);
+  const deck = box(1.28, .16, .55, mat(0x544566, .55), 0, .92, .77, cabinet);
   deck.rotation.x = -.12;
   const stick = mesh(new THREE.CylinderGeometry(.025, .025, .22, 10), darkMat, cabinet);
   stick.position.set(-.28, 1.08, .84); stick.rotation.x = -.12;
@@ -436,15 +457,20 @@ for (let i = 0; i < 7; i++) {
   sphere(cabinet, .055, PAL.coral, .25, 1.07, .84, [1, .55, 1]);
   sphere(cabinet, .055, PAL.mint, .43, 1.06, .84, [1, .55, 1]);
   box(.42, .16, .045, darkMat, 0, .49, .665, cabinet).castShadow = false;
-  box(.045, .1, .025, new THREE.MeshBasicMaterial({ color: glowColor }), 0, .49, .695, cabinet).castShadow = false;
+  box(.045, .1, .025, cabinetGlowMat, 0, .49, .695, cabinet).castShadow = false;
   for (const side of [-1, 1]) {
     const sideAd = mesh(new THREE.PlaneGeometry(.5, .5), atlasMaterial((i + (side < 0 ? 2 : 3)) % 8), cabinet);
     sideAd.position.set(side * .751, .48, 0);
     sideAd.rotation.y = side * Math.PI / 2;
     sideAd.castShadow = false;
   }
-  box(.055, 1.68, .045, new THREE.MeshBasicMaterial({ color: glowColor }), -.625, 1.77, .625, cabinet).castShadow = false;
-  box(.055, 1.68, .045, new THREE.MeshBasicMaterial({ color: glowColor }), .625, 1.77, .625, cabinet).castShadow = false;
+  box(.07, 1.68, .05, cabinetGlowMat, -.625, 1.77, .625, cabinet).castShadow = false;
+  box(.07, 1.68, .05, cabinetGlowMat, .625, 1.77, .625, cabinet).castShadow = false;
+  if (i % 2 === 0) {
+    const cabinetGlow = new THREE.PointLight(glowColor, reducedRendering ? .32 : .62, 2.35, 2);
+    cabinetGlow.position.set(0, 1.65, .9);
+    cabinet.add(cabinetGlow);
+  }
   box(1.12, .14, 1.1, darkMat, 0, .08, 0, cabinet);
 }
 
@@ -453,6 +479,8 @@ const dolls = [];
 // 也讓三個胸牌從前排頭頂之間露出來。
 const rearDollRiser = box(2.05, .74, .86, mat(0xd8d2e6, .78), 0, 1.34, -.48, machine);
 rearDollRiser.castShadow = false;
+const FRONT_SURFACE_Y = .96;
+const REAR_SURFACE_Y = 1.71;
 const startingPositions = [
   [-.96, 1.41, .12, .42], [-.64, 2.18, .08, -.48], [-.32, 1.41, .04, .42],
   [0, 2.18, 0, -.48], [.32, 1.41, -.04, .42], [.64, 2.18, -.08, -.48], [.96, 1.41, -.12, .42],
@@ -468,6 +496,7 @@ function sphere(parent, radius, color, x, y, z, scale = [1, 1, 1]) {
 function createDoll(prize, index) {
   const doll = new THREE.Group();
   const [x, y, rot, z] = startingPositions[index];
+  const surfaceY = z < 0 ? REAR_SURFACE_Y : FRONT_SURFACE_Y;
   doll.position.set(x, y, z); doll.rotation.y = rot;
   doll.scale.setScalar(.84);
   machine.add(doll);
@@ -597,15 +626,17 @@ function createDoll(prize, index) {
       brow.rotation.z = side * slant;
     }
   }
-  const badgeTexture = avatarAtlasView(prize.atlasIndex);
   const badgeBack = mesh(new THREE.CircleGeometry(.225, 28), paleMat, doll);
   badgeBack.position.set(0, .015, .247);
-  const badge = mesh(new THREE.CircleGeometry(.195, 28), new THREE.MeshBasicMaterial({ map: badgeTexture, transparent: true }), doll);
+  const badge = mesh(new THREE.CircleGeometry(.195, 28), avatarMaterial(prize.atlasIndex), doll);
   badge.position.set(0, .015, .253);
   const contactShadow = mesh(new THREE.CircleGeometry(.28, 28), new THREE.MeshBasicMaterial({ color: PAL.ink, transparent: true, opacity: .16, depthWrite: false }), machine);
-  contactShadow.rotation.x = -Math.PI / 2; contactShadow.scale.y = .58; contactShadow.position.set(x, .962, z);
+  contactShadow.rotation.x = -Math.PI / 2; contactShadow.scale.y = .58; contactShadow.position.set(x, surfaceY + .002, z);
   contactShadow.castShadow = false;
-  doll.userData = { prize, home: new THREE.Vector3(x, y, z), homeRotation: rot, index, contactShadow };
+  doll.userData = {
+    prize, home: new THREE.Vector3(x, y, z), homeRotation: rot, index, contactShadow, surfaceY,
+    tip: { x: 0, z: 0, velocityX: 0, velocityZ: 0, targetX: 0, targetZ: 0 },
+  };
   dolls.push(doll);
   return doll;
 }
@@ -683,6 +714,48 @@ function updateClawSwing(dt) {
   swing.velocityZ += ((targetZ - suspension.rotation.z) * 58 - swing.velocityZ * 6.8) * dt;
   suspension.rotation.x = THREE.MathUtils.clamp(suspension.rotation.x + swing.velocityX * dt, -.24, .24);
   suspension.rotation.z = THREE.MathUtils.clamp(suspension.rotation.z + swing.velocityZ * dt, -.24, .24);
+}
+
+function clawDropHeight(z) {
+  // 高台前緣不是一道無限薄的牆，用一小段過渡帶讓吊爪沿斜面抬高。
+  const rearMix = 1 - THREE.MathUtils.smoothstep(z, -.16, .06);
+  return THREE.MathUtils.lerp(1.72, 2.47, rearMix);
+}
+
+function bumpDolls(moveX, moveZ) {
+  const speed = Math.hypot(moveX, moveZ);
+  if (speed < .0005) return;
+  const directionX = moveX / speed, directionZ = moveZ / speed;
+  let hit = false;
+  for (const doll of dolls) {
+    const { tip, surfaceY } = doll.userData;
+    if (!doll.visible || doll.parent !== machine || surfaceY < REAR_SURFACE_Y - .01) continue;
+    if (Math.hypot(doll.position.x - crane.position.x, doll.position.z - crane.position.z) > .38) continue;
+    if (Math.hypot(tip.targetX, tip.targetZ) > .25) continue;
+    // 上方吊爪朝哪裡推，娃娃的頭就朝同一方向倒下。
+    tip.targetX = directionZ * 1.18;
+    tip.targetZ = -directionX * 1.18;
+    tip.velocityX += directionZ * 3.2;
+    tip.velocityZ -= directionX * 3.2;
+    hit = true;
+  }
+  if (hit) beep(145, .09, .025, "triangle");
+}
+
+function updateDollTopples(dt, time) {
+  for (const doll of dolls) {
+    if (!doll.visible || doll.parent !== machine) continue;
+    const { tip, home, surfaceY, index, contactShadow } = doll.userData;
+    tip.velocityX += ((tip.targetX - tip.x) * 34 - tip.velocityX * 7.2) * dt;
+    tip.velocityZ += ((tip.targetZ - tip.z) * 34 - tip.velocityZ * 7.2) * dt;
+    tip.x += tip.velocityX * dt;
+    tip.z += tip.velocityZ * dt;
+    const fallen = THREE.MathUtils.clamp(Math.hypot(tip.x, tip.z) / 1.18, 0, 1);
+    doll.rotation.x = tip.x;
+    doll.rotation.z = tip.z + (fallen < .03 ? Math.sin(time * 1.2 + index) * .015 : 0);
+    doll.position.y = THREE.MathUtils.lerp(home.y, surfaceY + .3, THREE.MathUtils.smoothstep(fallen, 0, 1));
+    contactShadow.scale.set(THREE.MathUtils.lerp(1, 1.45, fallen), THREE.MathUtils.lerp(.58, .82, fallen), 1);
+  }
 }
 
 const held = new Set();
@@ -766,7 +839,7 @@ function insertCoin() {
 
 function startGrab() {
   if (phase !== "idle") return;
-  phase = "dropping"; phaseTime = 0; phaseStart.y = clawY;
+  phase = "dropping"; phaseTime = 0; phaseStart = { y: clawY, targetY: clawDropHeight(crane.position.z) };
   releaseAll();
   grabButton.scale.y = .66; setTimeout(() => { grabButton.scale.y = 1; }, 140);
   updateControlLights(); setStatus("吊爪下降中……");
@@ -839,6 +912,7 @@ function nearestDoll() {
 function attachCaught() {
   caught = nearestDoll();
   if (!caught) return;
+  Object.assign(caught.userData.tip, { x: 0, z: 0, velocityX: 0, velocityZ: 0, targetX: 0, targetZ: 0 });
   caught.userData.contactShadow.visible = false;
   claw.attach(caught);
   caught.position.set(0, -.69, 0);
@@ -873,8 +947,17 @@ function resetRound() {
     caught.position.copy(caught.userData.home);
     caught.rotation.set(0, caught.userData.homeRotation, 0);
     caught.scale.setScalar(.84);
-    caught.userData.contactShadow.position.set(caught.userData.home.x, .962, caught.userData.home.z);
+    caught.userData.contactShadow.position.set(caught.userData.home.x, caught.userData.surfaceY + .002, caught.userData.home.z);
     caught.userData.contactShadow.visible = true;
+  }
+  for (const doll of dolls) {
+    const { tip, home, homeRotation, contactShadow } = doll.userData;
+    Object.assign(tip, { x: 0, z: 0, velocityX: 0, velocityZ: 0, targetX: 0, targetZ: 0 });
+    if (doll.parent === machine) {
+      doll.position.copy(home);
+      doll.rotation.set(0, homeRotation, 0);
+      contactShadow.scale.set(1, .58, 1);
+    }
   }
   caught = null;
   crane.position.set(0, 0, .2); setClawHeight(3.34); setProng(1);
@@ -903,16 +986,18 @@ function updateGame(dt) {
   joystickPivot.rotation.z += (targetTiltZ - joystickPivot.rotation.z) * Math.min(dt * 14, 1);
   if (phase === "idle") {
     const speed = 1.55 * dt;
+    const oldX = crane.position.x, oldZ = crane.position.z;
     crane.position.x += inputX * speed;
     crane.position.z += inputZ * speed;
     crane.position.x = THREE.MathUtils.clamp(crane.position.x, -.94, .94);
     crane.position.z = THREE.MathUtils.clamp(crane.position.z, -1.05, 1.12);
     railZ.position.x = crane.position.x;
+    bumpDolls(crane.position.x - oldX, crane.position.z - oldZ);
     return;
   }
   if (phase === "dropping") {
     const p = Math.min(phaseTime / 1.18, 1);
-    setClawHeight(THREE.MathUtils.lerp(phaseStart.y, 1.72, ease(p)));
+    setClawHeight(THREE.MathUtils.lerp(phaseStart.y, phaseStart.targetY, ease(p)));
     if (p === 1) { enter("closing"); beep(280, .13, .05, "square"); }
   } else if (phase === "closing") {
     const p = Math.min(phaseTime / .62, 1); setProng(1 - ease(p));
@@ -1001,7 +1086,7 @@ function animate() {
   grabMaterial.emissiveIntensity = phase === "idle" ? .28 + pulse * 1.15 : .05;
   coinGlow.intensity = phase === "waiting" ? .35 + pulse * 1.1 : 0;
   grabGlow.intensity = phase === "idle" ? .25 + pulse * .9 : 0;
-  dolls.forEach((doll, index) => { if (doll.visible && doll.parent === machine) doll.rotation.z = Math.sin(time * 1.2 + index) * .015; });
+  updateDollTopples(dt, time);
   insideLight.intensity = 6.6 + Math.sin(time * 2.1) * .35;
   renderer.render(scene, camera);
 }
@@ -1018,8 +1103,8 @@ if (new URLSearchParams(location.search).has("test")) {
     return { x: rect.left + (point.x + 1) * rect.width / 2, y: rect.top + (1 - point.y) * rect.height / 2 };
   };
   window.__clawTest = {
-    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z, swingX: suspension.rotation.x, swingZ: suspension.rotation.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, look: { x: look.x, y: look.y, targetX: look.targetX, targetY: look.targetY }, cues: { coin: coinSlotMaterial.emissiveIntensity, grab: grabMaterial.emissiveIntensity, coinVisible: coinToken.visible }, music: { embedded, created: Boolean(themeAudio), playing: Boolean(themeAudio && !themeAudio.paused), muted: Boolean(themeAudio?.muted) }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
-    getDolls: () => dolls.map(doll => ({ id: doll.userData.prize.id, parent: doll.parent === machine ? "machine" : "claw", visible: doll.visible, x: doll.position.x, y: doll.position.y, z: doll.position.z })),
+    getState: () => ({ phase, claw: { x: crane.position.x, y: clawY, z: crane.position.z, swingX: suspension.rotation.x, swingZ: suspension.rotation.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, look: { x: look.x, y: look.y, targetX: look.targetX, targetY: look.targetY }, cues: { coin: coinSlotMaterial.emissiveIntensity, grab: grabMaterial.emissiveIntensity, coinVisible: coinToken.visible }, music: { embedded, created: Boolean(themeAudio), playing: Boolean(themeAudio && !themeAudio.paused), muted: Boolean(themeAudio?.muted) }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
+    getDolls: () => dolls.map(doll => ({ id: doll.userData.prize.id, parent: doll.parent === machine ? "machine" : "claw", visible: doll.visible, x: doll.position.x, y: doll.position.y, z: doll.position.z, surfaceY: doll.userData.surfaceY, tipX: doll.userData.tip.x, tipZ: doll.userData.tip.z })),
     getControlPoint: name => controlPoint({ coin: coinSlot, grab: grabButton, joystick: joystickKnob }[name]),
     setClaw: (x, z) => { if (phase !== "idle") return false; crane.position.x = THREE.MathUtils.clamp(Number(x), -.94, .94); crane.position.z = THREE.MathUtils.clamp(Number(z), -1.05, 1.12); return true; },
     insertCoin,
