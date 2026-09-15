@@ -34,7 +34,7 @@ function requestTheme(action, muted = false) {
 
 if (embedded) {
   exitButton.hidden = false;
-  exitButton.addEventListener("click", () => parent.postMessage({ type: "claw:exit" }, "*"));
+  exitButton.addEventListener("click", () => parent.postMessage({ type: "claw:exit", complete: Store.data.owned.length === PRIZES.length }, "*"));
   requestTheme("play");
 }
 
