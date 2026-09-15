@@ -4,7 +4,7 @@ import { Store } from "./store.js";
 
 const $ = selector => document.querySelector(selector);
 const statusEl = $("#status");
-const dropButton = $("#drop");
+const soundButton = $("#sound");
 const progressEl = $("#progress");
 const revealEl = $("#reveal");
 const collectionEl = $("#collection");
@@ -12,7 +12,6 @@ const collectionTitleEl = $("#collectionTitle");
 const collectionListEl = $("#collectionList");
 const collectionCloseButton = $("#collectionClose");
 const exitButton = $("#exit");
-const moveButtons = [...document.querySelectorAll(".move")];
 const embedded = window.self !== window.top;
 
 if (embedded) {
@@ -87,17 +86,65 @@ function box(w, h, d, material, x, y, z, parent = scene) {
   return object;
 }
 
+const chuteX = -1.46, chuteZ = 1.1;
+function surfaceWithChute(w, h, d, material, y, parent) {
+  const x0 = -w / 2, x1 = w / 2, z0 = -d / 2, z1 = d / 2;
+  const holeX0 = chuteX - .44, holeX1 = chuteX + .44;
+  const holeZ0 = chuteZ - .31, holeZ1 = chuteZ + .31;
+  box(holeX0 - x0, h, d, material, (x0 + holeX0) / 2, y, 0, parent);
+  box(x1 - holeX1, h, d, material, (holeX1 + x1) / 2, y, 0, parent);
+  box(holeX1 - holeX0, h, holeZ0 - z0, material, chuteX, y, (z0 + holeZ0) / 2, parent);
+  box(holeX1 - holeX0, h, z1 - holeZ1, material, chuteX, y, (holeZ1 + z1) / 2, parent);
+}
+
 // 地板與機台。玻璃櫃體只做薄面，四角實體框架負責建立輪廓。
-const floor = mesh(new THREE.PlaneGeometry(28, 28), mat(PAL.floor, 0.88));
+const floorCanvas = document.createElement("canvas");
+floorCanvas.width = floorCanvas.height = 256;
+const floorContext = floorCanvas.getContext("2d");
+for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+  floorContext.fillStyle = (x + y) % 2 ? "#ddd6ed" : "#efe9dc";
+  floorContext.fillRect(x * 64, y * 64, 64, 64);
+}
+floorContext.strokeStyle = "rgba(105,87,145,.12)"; floorContext.lineWidth = 3;
+for (let n = 0; n <= 256; n += 64) { floorContext.beginPath(); floorContext.moveTo(n, 0); floorContext.lineTo(n, 256); floorContext.stroke(); floorContext.beginPath(); floorContext.moveTo(0, n); floorContext.lineTo(256, n); floorContext.stroke(); }
+const floorTexture = new THREE.CanvasTexture(floorCanvas);
+floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; floorTexture.repeat.set(9, 9); floorTexture.colorSpace = THREE.SRGBColorSpace;
+const floor = mesh(new THREE.PlaneGeometry(28, 28), new THREE.MeshStandardMaterial({ map: floorTexture, roughness: .88 }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 
+// 遊樂園後牆：大面積漸層、拱門與像素燈，避免機台像孤零零放在空白攝影棚。
+const wallCanvas = document.createElement("canvas");
+wallCanvas.width = 1024; wallCanvas.height = 512;
+const wallContext = wallCanvas.getContext("2d");
+const wallGradient = wallContext.createLinearGradient(0, 0, 0, 512);
+wallGradient.addColorStop(0, "#d9d4ec"); wallGradient.addColorStop(.55, "#c9c1e1"); wallGradient.addColorStop(1, "#a99bc9");
+wallContext.fillStyle = wallGradient; wallContext.fillRect(0, 0, 1024, 512);
+wallContext.fillStyle = "rgba(255,255,255,.18)";
+for (let i = 0; i < 28; i++) wallContext.fillRect(24 + (i * 137) % 970, 24 + (i * 83) % 280, 12 + i % 3 * 7, 12 + i % 3 * 7);
+wallContext.strokeStyle = "rgba(101,214,205,.35)"; wallContext.lineWidth = 9;
+wallContext.beginPath(); wallContext.arc(512, 515, 360, Math.PI, Math.PI * 2); wallContext.stroke();
+const wallTexture = new THREE.CanvasTexture(wallCanvas); wallTexture.colorSpace = THREE.SRGBColorSpace;
+const backWall = mesh(new THREE.PlaneGeometry(20, 8), new THREE.MeshBasicMaterial({ map: wallTexture }), scene);
+backWall.position.set(0, 3.7, -6.25); backWall.castShadow = false;
+
+// 懸掛燈串建立遊樂園的縱深；燈泡只發光，不投動態陰影。
+const festoon = new THREE.Group(); scene.add(festoon);
+const cordCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-8, 5.4, -3.7), new THREE.Vector3(0, 4.85, -4.2), new THREE.Vector3(8, 5.4, -3.7)]);
+const cord = mesh(new THREE.TubeGeometry(cordCurve, 40, .018, 6, false), darkMat, festoon); cord.castShadow = false;
+for (let i = 0; i <= 16; i++) {
+  const point = cordCurve.getPoint(i / 16);
+  const bulbColor = i % 3 === 0 ? PAL.mint : i % 3 === 1 ? PAL.amber : 0xe6a6d6;
+  const bulb = sphere(festoon, .07, bulbColor, point.x, point.y - .09, point.z, [1, 1.18, 1]);
+  bulb.material.emissive = new THREE.Color(bulbColor); bulb.material.emissiveIntensity = 1.1; bulb.castShadow = false;
+}
+
 const machine = new THREE.Group();
 scene.add(machine);
-box(4.7, 0.72, 3.65, violetMat, 0, 0.36, 0, machine);
-box(4.46, 0.22, 3.35, paleMat, 0, 0.78, 0, machine);
+surfaceWithChute(4.7, .72, 3.65, violetMat, .36, machine);
+surfaceWithChute(4.46, .22, 3.35, paleMat, .78, machine);
 box(4.72, 0.36, 3.66, violetMat, 0, 4.46, 0, machine);
-box(4.2, 0.07, 3.05, mat(0xb6acd2, 0.9), 0, 0.92, 0, machine);
+surfaceWithChute(4.2, .07, 3.05, mat(0xb6acd2, .9), .92, machine);
 
 for (const x of [-2.21, 2.21]) for (const z of [-1.66, 1.66]) {
   box(0.16, 3.55, 0.16, darkMat, x, 2.65, z, machine);
@@ -110,30 +157,76 @@ box(4.35, 3.25, 0.025, glassMat, 0, 2.55, 1.67, machine).castShadow = false;
 box(0.025, 3.25, 3.2, glassMat, -2.22, 2.55, 0, machine).castShadow = false;
 box(0.025, 3.25, 3.2, glassMat, 2.22, 2.55, 0, machine).castShadow = false;
 
-// 落物口與控制台。
-box(1.15, 0.16, 0.85, darkMat, -1.46, 0.94, 1.1, machine);
-box(1.03, 0.03, 0.73, mat(0x211b2f, 0.9), -1.46, 1.035, 1.1, machine);
-const consoleTop = box(1.3, 0.22, 0.86, paleMat, 1.38, 0.93, 1.52, machine);
+// 落物口不是貼在桌上的黑平台：四條框圍出真正的開口，內壁一路往下，
+// 再連到機台正面的取物箱。娃娃落下時會實際沉入這個深度。
+const chuteInner = mat(0x171321, .92);
+box(.14, .14, .9, darkMat, chuteX - .54, .99, chuteZ, machine);
+box(.14, .14, .9, darkMat, chuteX + .54, .99, chuteZ, machine);
+box(1.22, .14, .14, darkMat, chuteX, .99, chuteZ - .38, machine);
+box(1.22, .14, .14, darkMat, chuteX, .99, chuteZ + .38, machine);
+box(.08, .62, .72, chuteInner, chuteX - .43, .69, chuteZ, machine);
+box(.08, .62, .72, chuteInner, chuteX + .43, .69, chuteZ, machine);
+box(.86, .62, .08, chuteInner, chuteX, .69, chuteZ - .27, machine);
+box(.86, .1, .62, mat(0x09070d, 1), chuteX, .39, chuteZ, machine);
+// 正面取物門：洞內的娃娃會落到這裡，之後才顯示獲得結果。
+box(1.02, .48, .025, mat(0x211a31, .78), chuteX, .42, 1.833, machine).castShadow = false;
+box(1.16, .08, .07, darkMat, chuteX, .69, 1.84, machine);
+box(.08, .58, .07, darkMat, chuteX - .56, .4, 1.84, machine);
+box(.08, .58, .07, darkMat, chuteX + .56, .4, 1.84, machine);
+const consoleTop = box(1.72, 0.22, 0.9, paleMat, 1.15, 0.93, 1.49, machine);
 consoleTop.rotation.x = -0.08;
-const redButton = mesh(new THREE.CylinderGeometry(0.18, 0.2, 0.12, 24), mat(PAL.coral, 0.28), machine);
-redButton.position.set(1.38, 1.11, 1.5);
+const joystickBase = mesh(new THREE.CylinderGeometry(.19, .22, .08, 24), darkMat, machine);
+joystickBase.position.set(.65, 1.11, 1.53); joystickBase.userData.control = "joystick";
+const joystickPivot = new THREE.Group(); joystickPivot.position.set(.65, 1.14, 1.53); machine.add(joystickPivot);
+const joystickStick = mesh(new THREE.CylinderGeometry(.035, .045, .34, 12), metalMat, joystickPivot); joystickStick.position.y = .17;
+const joystickKnob = mesh(new THREE.SphereGeometry(.105, 18, 12), mat(PAL.violet, .28), joystickPivot); joystickKnob.position.y = .37; joystickKnob.userData.control = "joystick";
+const coinMaterial = new THREE.MeshStandardMaterial({ color: PAL.amber, emissive: PAL.amber, emissiveIntensity: .45, roughness: .28 });
+const grabMaterial = new THREE.MeshStandardMaterial({ color: PAL.coral, emissive: PAL.coral, emissiveIntensity: .08, roughness: .28 });
+const coinButton = mesh(new THREE.CylinderGeometry(.13, .15, .1, 24), coinMaterial, machine);
+coinButton.position.set(1.19, 1.12, 1.54); coinButton.userData.control = "coin";
+const grabButton = mesh(new THREE.CylinderGeometry(.17, .19, .11, 24), grabMaterial, machine);
+grabButton.position.set(1.68, 1.13, 1.54); grabButton.userData.control = "grab";
+
+function panelLabel(text, x) {
+  const canvas = document.createElement("canvas"); canvas.width = 256; canvas.height = 96;
+  const context = canvas.getContext("2d"); context.fillStyle = "rgba(69,58,94,.82)"; context.fillRect(0, 0, 256, 96);
+  context.fillStyle = "#fff"; context.font = "700 43px sans-serif"; context.textAlign = "center"; context.textBaseline = "middle"; context.fillText(text, 128, 50);
+  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+  const label = mesh(new THREE.PlaneGeometry(.34, .13), new THREE.MeshBasicMaterial({ map: texture }), machine);
+  label.position.set(x, .94, 1.955); label.castShadow = false;
+}
+panelLabel("移動", .65); panelLabel("投幣", 1.19); panelLabel("夾取", 1.68);
 
 // 招牌用 CanvasTexture，避免額外字型與圖片依賴。
 const signCanvas = document.createElement("canvas");
-signCanvas.width = 768; signCanvas.height = 160;
+signCanvas.width = 896; signCanvas.height = 208;
 const signContext = signCanvas.getContext("2d");
-const gradient = signContext.createLinearGradient(0, 0, 768, 0);
-gradient.addColorStop(0, "#7658b5"); gradient.addColorStop(.52, "#a88cdd"); gradient.addColorStop(1, "#65d6cd");
-signContext.fillStyle = gradient; signContext.fillRect(0, 0, 768, 160);
-signContext.fillStyle = "rgba(255,255,255,.18)";
-for (let x = 20; x < 768; x += 52) signContext.fillRect(x, 20 + (x % 104), 18, 18);
+const gradient = signContext.createLinearGradient(0, 0, 896, 208);
+gradient.addColorStop(0, "#35294f"); gradient.addColorStop(.48, "#614a8c"); gradient.addColorStop(1, "#315f67");
+signContext.fillStyle = gradient; signContext.fillRect(0, 0, 896, 208);
+signContext.strokeStyle = "#8de8e0"; signContext.lineWidth = 12; signContext.strokeRect(15, 15, 866, 178);
+signContext.strokeStyle = "rgba(230,166,214,.9)"; signContext.lineWidth = 4; signContext.strokeRect(32, 32, 832, 144);
+for (let x = 62; x < 860; x += 76) {
+  signContext.beginPath(); signContext.fillStyle = x % 152 ? "#f0c66f" : "#8de8e0"; signContext.arc(x, 28, 7, 0, Math.PI * 2); signContext.fill();
+}
 signContext.fillStyle = "#fff"; signContext.textAlign = "center"; signContext.textBaseline = "middle";
-signContext.font = "700 66px sans-serif"; signContext.fillText("GLITCH CLAW", 384, 79);
+signContext.shadowColor = "#8de8e0"; signContext.shadowBlur = 18;
+signContext.font = "800 70px sans-serif"; signContext.fillText("GLITCH CLAW", 448, 88);
+signContext.shadowBlur = 7; signContext.fillStyle = "#e5fffc";
+signContext.font = "600 25px sans-serif"; signContext.fillText("格莉奇遊樂園・幸運夾取站", 448, 145);
 const signTexture = new THREE.CanvasTexture(signCanvas); signTexture.colorSpace = THREE.SRGBColorSpace;
 // 原本架在機頂時，桌機的寬畫面會把字切掉；放到底座中央又會被方向鍵蓋住。
 // 改嵌在玻璃櫃上緣的實體橫框，位置較低，而且不占用遊戲畫面與操作區。
-const sign = mesh(new THREE.PlaneGeometry(2.4, .38), new THREE.MeshBasicMaterial({ map: signTexture }), machine);
-sign.position.set(0, 4.2, 1.836);
+const signBack = box(2.22, .64, .13, mat(PAL.ink, .3, .28), .55, .39, 1.76, machine);
+const sign = mesh(new THREE.PlaneGeometry(2.08, .54), new THREE.MeshBasicMaterial({ map: signTexture }), machine);
+sign.position.set(.55, .39, 1.836);
+const signLight = new THREE.PointLight(PAL.mint, 2.6, 3.2, 1.8); signLight.position.set(.55, .48, 2.02); machine.add(signLight);
+
+// 機台正面的像素燈框呼應格莉奇的青色髮飾。
+const trimMaterial = new THREE.MeshStandardMaterial({ color: PAL.mint, emissive: PAL.mint, emissiveIntensity: 1.25, roughness: .3 });
+box(.045, 3.1, .045, trimMaterial, -2.105, 2.56, 1.71, machine).castShadow = false;
+box(.045, 3.1, .045, trimMaterial, 2.105, 2.56, 1.71, machine).castShadow = false;
+box(4.2, .045, .045, trimMaterial, 0, 4.08, 1.71, machine).castShadow = false;
 
 // 背景街機有完整輪廓、燈牌、螢幕與控制台，但材質和對比刻意壓低，
 // 讓它們看得出是遊樂園機台，又不會搶走中央娃娃機。
@@ -167,8 +260,8 @@ for (let i = 0; i < 7; i++) {
 const textureLoader = new THREE.TextureLoader();
 const dolls = [];
 const startingPositions = [
-  [0.02, 0.22, 0.08], [-.83, 0.13, -.28], [.88, 0.14, -.22],
-  [-1.45, 0.16, .35], [1.45, 0.17, .34], [-.62, 0.18, .76], [.66, 0.17, .72],
+  [-1.64, 1.41, .14, .06], [-1.1, 1.41, .1, -.05], [-.55, 1.41, .05, -.11],
+  [0, 1.41, 0, -.13], [.55, 1.41, -.05, -.11], [1.1, 1.41, -.1, -.05], [1.64, 1.41, -.14, .06],
 ];
 
 function sphere(parent, radius, color, x, y, z, scale = [1, 1, 1]) {
@@ -179,8 +272,9 @@ function sphere(parent, radius, color, x, y, z, scale = [1, 1, 1]) {
 
 function createDoll(prize, index) {
   const doll = new THREE.Group();
-  const [x, rot, z] = startingPositions[index];
-  doll.position.set(x, .96, z); doll.rotation.y = rot;
+  const [x, y, rot, z] = startingPositions[index];
+  doll.position.set(x, y, z); doll.rotation.y = rot;
+  doll.scale.setScalar(.84);
   machine.add(doll);
   sphere(doll, .34, prize.color, 0, .42, 0, [1, .93, .9]);
   sphere(doll, .33, prize.color, 0, -.05, 0, [.83, 1.05, .67]);
@@ -189,22 +283,77 @@ function createDoll(prize, index) {
   sphere(doll, .15, prize.color, -.17, -.36, 0, [.72, 1.15, .8]);
   sphere(doll, .15, prize.color, .17, -.36, 0, [.72, 1.15, .8]);
 
-  // 耳朵／角／髮飾用不同剪影區分角色。
-  if (["catgrass", "bambi", "blackhole"].includes(prize.id)) {
+  // 頭部只用官方頭像看得懂的特徵。第一版拿三角錐代替「髮束／耳朵」，
+  // 結果四個人像長角，後排的角又會插到前排頭上。這裡改成圓潤的布偶語彙：
+  // 髮帽、髮球、髮夾、眼鏡與真正的帽子；只有貓草保留一對柔軟貓耳。
+  const addHairCap = (color, scale = [1.02, .62, .94]) => {
+    const cap = sphere(doll, .35, color, 0, .61, -.035, scale);
+    cap.castShadow = false;
+    return cap;
+  };
+  const addLock = (color, x, y, sx = .48, sy = 1.05, rotation = 0) => {
+    const lock = sphere(doll, .15, color, x, y, .02, [sx, sy, .56]);
+    lock.rotation.z = rotation;
+    return lock;
+  };
+  if (prize.id === "glitch") {
+    addHairCap(0xc6d0f0);
+    addLock(0xc6d0f0, -.25, .51, .45, 1.08, -.18);
+    addLock(0xc6d0f0, .25, .51, .45, 1.08, .18);
+    box(.055, .055, .035, new THREE.MeshBasicMaterial({ color: PAL.mint }), .22, .65, .305, doll);
+    box(.04, .04, .035, new THREE.MeshBasicMaterial({ color: PAL.mint }), .29, .71, .305, doll);
+  } else if (prize.id === "catgrass") {
+    addHairCap(0x40355f, [1.05, .7, .95]);
     for (const side of [-1, 1]) {
-      const ear = mesh(new THREE.ConeGeometry(.15, .32, 4), mat(prize.color, .82), doll);
-      ear.position.set(side * .22, .73, 0); ear.rotation.z = side * -.22;
+      const ear = sphere(doll, .15, 0x40355f, side * .23, .77, -.02, [.52, 1.05, .52]);
+      ear.rotation.z = side * -.28;
     }
-  } else {
-    const tuft = mesh(new THREE.ConeGeometry(.11, .27, 5), mat(prize.accent, .76), doll);
-    tuft.position.set(-.13, .76, .01); tuft.rotation.z = -.34;
+    addLock(0x594a78, -.27, .52, .46, 1.12, -.2);
+  } else if (prize.id === "bambi") {
+    addHairCap(0xe6a6d6, [1.05, .67, .95]);
+    sphere(doll, .17, 0xe6a6d6, -.32, .56, -.04, [.72, 1, .72]);
+    sphere(doll, .17, 0xe6a6d6, .32, .56, -.04, [.72, 1, .72]);
+    for (const side of [-1, 1]) {
+      const glasses = mesh(new THREE.TorusGeometry(.09, .014, 8, 20), mat(0x59405f, .38), doll);
+      glasses.position.set(side * .105, .45, .305);
+    }
+    box(.05, .018, .018, darkMat, 0, .45, .31, doll);
+  } else if (prize.id === "noah") {
+    addHairCap(0x888897, [1.04, .66, .95]);
+    addLock(0x777786, -.27, .52, .42, 1.14, -.18);
+    for (const side of [-1, 1]) {
+      const goggle = mesh(new THREE.TorusGeometry(.072, .017, 8, 18), mat(0x9a7440, .3, .4), doll);
+      goggle.position.set(side * .085, .7, .24);
+    }
+  } else if (prize.id === "tower") {
+    addHairCap(0x20223a, [1.03, .67, .94]);
+    addLock(0x20223a, -.27, .51, .38, 1.13, -.19);
+    addLock(0x20223a, .27, .53, .34, .96, .16);
+    sphere(doll, .09, 0x20223a, .31, .68, -.12, [.65, 1.25, .65]);
+  } else if (prize.id === "zerox") {
+    addHairCap(0xd8d8e5, [1.03, .65, .94]);
+    addLock(0xd8d8e5, -.29, .39, .52, 1.55, -.06);
+    addLock(0xd8d8e5, .29, .39, .52, 1.55, .06);
+    box(.17, .045, .028, new THREE.MeshBasicMaterial({ color: 0x8fded9 }), -.19, .64, .306, doll).rotation.z = -.08;
+  } else if (prize.id === "blackhole") {
+    addHairCap(0x171424, [1.02, .58, .94]);
+    const brim = mesh(new THREE.CylinderGeometry(.42, .42, .055, 28), mat(0xa56f34, .55), doll);
+    brim.position.set(0, .77, -.015); brim.rotation.z = -.08;
+    const crown = mesh(new THREE.CylinderGeometry(.23, .28, .25, 24), mat(0xb7803e, .52), doll);
+    crown.position.set(0, .9, -.02); crown.rotation.z = -.08;
+    box(.5, .045, .28, darkMat, 0, .82, -.02, doll).rotation.z = -.08;
   }
   for (const side of [-1, 1]) sphere(doll, .04, 0x302940, side * .12, .46, .29, [1, 1.3, .6]);
   const badgeTexture = textureLoader.load(prize.avatar);
   badgeTexture.colorSpace = THREE.SRGBColorSpace;
-  const badge = mesh(new THREE.CircleGeometry(.16, 28), new THREE.MeshBasicMaterial({ map: badgeTexture, transparent: true }), doll);
-  badge.position.set(0, -.04, .235);
-  doll.userData = { prize, home: new THREE.Vector3(x, .96, z), index };
+  const badgeBack = mesh(new THREE.CircleGeometry(.225, 28), paleMat, doll);
+  badgeBack.position.set(0, .015, .247);
+  const badge = mesh(new THREE.CircleGeometry(.195, 28), new THREE.MeshBasicMaterial({ map: badgeTexture, transparent: true }), doll);
+  badge.position.set(0, .015, .253);
+  const contactShadow = mesh(new THREE.CircleGeometry(.28, 28), new THREE.MeshBasicMaterial({ color: PAL.ink, transparent: true, opacity: .16, depthWrite: false }), machine);
+  contactShadow.rotation.x = -Math.PI / 2; contactShadow.scale.y = .58; contactShadow.position.set(x, .962, z);
+  contactShadow.castShadow = false;
+  doll.userData = { prize, home: new THREE.Vector3(x, y, z), index, contactShadow };
   dolls.push(doll);
   return doll;
 }
@@ -220,15 +369,23 @@ const cable = mesh(new THREE.CylinderGeometry(.018, .018, 1, 10), darkMat, crane
 const claw = new THREE.Group(); crane.add(claw);
 const clawHead = mesh(new THREE.CylinderGeometry(.18, .22, .28, 20), metalMat, claw);
 const prongs = [];
+function placeBetween(object, ax, ay, bx, by) {
+  object.position.set((ax + bx) / 2, (ay + by) / 2, 0);
+  object.scale.y = Math.hypot(bx - ax, by - ay);
+  object.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(bx - ax, by - ay, 0).normalize()
+  );
+}
 for (let i = 0; i < 3; i++) {
   const pivot = new THREE.Group();
   pivot.rotation.y = i * Math.PI * 2 / 3;
   claw.add(pivot);
-  const arm = mesh(new THREE.CylinderGeometry(.025, .035, .66, 10), metalMat, pivot);
-  arm.position.set(.14, -.3, 0); arm.rotation.z = -.45;
-  const tip = mesh(new THREE.SphereGeometry(.06, 12, 8), metalMat, pivot);
-  tip.position.set(.28, -.59, 0);
-  prongs.push({ pivot, arm, tip });
+  const upper = mesh(new THREE.CylinderGeometry(.032, .04, 1, 10), metalMat, pivot);
+  const hook = mesh(new THREE.CylinderGeometry(.027, .034, 1, 10), metalMat, pivot);
+  const joint = mesh(new THREE.SphereGeometry(.055, 12, 8), metalMat, pivot);
+  const tip = mesh(new THREE.SphereGeometry(.052, 12, 8), metalMat, pivot);
+  prongs.push({ pivot, upper, hook, joint, tip });
 }
 
 let clawY = 3.34;
@@ -240,32 +397,27 @@ function setClawHeight(y) {
 setClawHeight(clawY);
 
 function setProng(open) {
-  const angle = THREE.MathUtils.lerp(-.15, -.48, open);
   for (const part of prongs) {
-    part.arm.rotation.z = angle;
-    part.tip.position.x = THREE.MathUtils.lerp(.14, .28, open);
-    part.tip.position.y = THREE.MathUtils.lerp(-.62, -.59, open);
+    const elbowX = THREE.MathUtils.lerp(.22, .39, open);
+    const tipX = THREE.MathUtils.lerp(.065, .2, open);
+    const elbowY = -.43, tipY = -.72;
+    placeBetween(part.upper, .09, -.08, elbowX, elbowY);
+    placeBetween(part.hook, elbowX, elbowY, tipX, tipY);
+    part.joint.position.set(elbowX, elbowY, 0);
+    part.tip.position.set(tipX, tipY, 0);
   }
 }
 setProng(1);
 
 const held = new Set();
+const stickInput = { x: 0, z: 0 };
 const keyMap = { ArrowLeft: "left", a: "left", A: "left", ArrowRight: "right", d: "right", D: "right", ArrowUp: "forward", w: "forward", W: "forward", ArrowDown: "back", s: "back", S: "back" };
-function releaseAll() { held.clear(); moveButtons.forEach(button => button.classList.remove("active")); }
-moveButtons.forEach(button => {
-  const down = event => { event.preventDefault(); if (phase === "idle") { held.add(button.dataset.dir); button.classList.add("active"); beep(340, .035, .025); } };
-  const up = event => { event.preventDefault(); held.delete(button.dataset.dir); button.classList.remove("active"); };
-  button.addEventListener("pointerdown", down); button.addEventListener("pointerup", up); button.addEventListener("pointercancel", up); button.addEventListener("pointerleave", up);
-});
-addEventListener("keydown", event => {
-  if (keyMap[event.key]) { event.preventDefault(); held.add(keyMap[event.key]); }
-  if (event.code === "Space" && !event.repeat) { event.preventDefault(); startGrab(); }
-});
-addEventListener("keyup", event => { if (keyMap[event.key]) held.delete(keyMap[event.key]); });
-addEventListener("blur", releaseAll);
+function releaseAll() { held.clear(); stickInput.x = stickInput.z = 0; }
 
+let soundEnabled = true;
 let audioContext;
 function beep(frequency, duration = .09, volume = .04, type = "sine") {
+  if (!soundEnabled) return;
   try {
     audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
     const oscillator = audioContext.createOscillator();
@@ -277,29 +429,94 @@ function beep(frequency, duration = .09, volume = .04, type = "sine") {
     oscillator.start(); oscillator.stop(audioContext.currentTime + duration);
   } catch (_) { /* 沒有音效仍可玩。 */ }
 }
+soundButton.addEventListener("click", () => {
+  soundEnabled = !soundEnabled;
+  soundButton.textContent = soundEnabled ? "音效：開" : "音效：關";
+  soundButton.setAttribute("aria-pressed", String(!soundEnabled));
+  if (soundEnabled) beep(620, .08, .035);
+});
 
-let phase = "idle";
+addEventListener("keydown", event => {
+  if (keyMap[event.key]) {
+    event.preventDefault();
+    if (phase === "idle" && !held.has(keyMap[event.key])) beep(330, .045, .022, "triangle");
+    held.add(keyMap[event.key]);
+  }
+  if ((event.key === "c" || event.key === "C") && !event.repeat) insertCoin();
+  if (event.code === "Space" && !event.repeat) { event.preventDefault(); startGrab(); }
+});
+addEventListener("keyup", event => { if (keyMap[event.key]) held.delete(keyMap[event.key]); });
+addEventListener("blur", releaseAll);
+
+let phase = "waiting";
 let phaseTime = 0;
 let phaseStart = {};
 let caught = null;
 let forcedPrizeId = null;
-const chute = new THREE.Vector2(-1.46, 1.1);
+const chute = new THREE.Vector2(chuteX, chuteZ);
 
-function setControls(enabled) {
-  dropButton.disabled = !enabled;
-  moveButtons.forEach(button => { button.disabled = !enabled; });
-  if (!enabled) releaseAll();
+function updateControlLights() {
+  coinMaterial.emissiveIntensity = phase === "waiting" ? .7 : .08;
+  grabMaterial.emissiveIntensity = phase === "idle" ? .65 : .06;
 }
 
 function setStatus(text) { statusEl.textContent = text; }
 
+function insertCoin() {
+  if (phase !== "waiting") return;
+  phase = "idle"; phaseTime = 0;
+  coinButton.scale.y = .62; setTimeout(() => { coinButton.scale.y = 1; }, 130);
+  beep(880, .07, .045, "square"); setTimeout(() => beep(1320, .12, .04), 75);
+  setStatus("拖動機台搖桿對準娃娃，再按「夾取」。");
+  updateControlLights();
+}
+
 function startGrab() {
   if (phase !== "idle") return;
   phase = "dropping"; phaseTime = 0; phaseStart.y = clawY;
-  setControls(false); setStatus("吊爪下降中……");
+  releaseAll();
+  grabButton.scale.y = .66; setTimeout(() => { grabButton.scale.y = 1; }, 140);
+  updateControlLights(); setStatus("吊爪下降中……");
   beep(190, .2, .055, "square");
 }
-dropButton.addEventListener("click", startGrab);
+
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+const controlMeshes = [joystickBase, joystickKnob, coinButton, grabButton];
+let joystickPointer = null;
+let joystickOrigin = { x: 0, y: 0 };
+function controlHit(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNdc.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
+  raycaster.setFromCamera(pointerNdc, camera);
+  return raycaster.intersectObjects(controlMeshes, false)[0]?.object?.userData.control || null;
+}
+renderer.domElement.addEventListener("pointerdown", event => {
+  const control = controlHit(event);
+  if (control === "coin") insertCoin();
+  if (control === "grab") startGrab();
+  if (control === "joystick" && phase === "idle") {
+    event.preventDefault(); joystickPointer = event.pointerId;
+    joystickOrigin = { x: event.clientX, y: event.clientY };
+    renderer.domElement.setPointerCapture(event.pointerId);
+    beep(310, .045, .022, "triangle");
+  }
+});
+renderer.domElement.addEventListener("pointermove", event => {
+  if (event.pointerId === joystickPointer) {
+    stickInput.x = THREE.MathUtils.clamp((event.clientX - joystickOrigin.x) / 48, -1, 1);
+    stickInput.z = THREE.MathUtils.clamp((event.clientY - joystickOrigin.y) / 48, -1, 1);
+  } else {
+    renderer.domElement.style.cursor = controlHit(event) ? "pointer" : "default";
+  }
+});
+function releaseJoystick(event) {
+  if (event.pointerId !== joystickPointer) return;
+  joystickPointer = null; stickInput.x = stickInput.z = 0;
+  if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+}
+renderer.domElement.addEventListener("pointerup", releaseJoystick);
+renderer.domElement.addEventListener("pointercancel", releaseJoystick);
 
 function nearestDoll() {
   if (forcedPrizeId) {
@@ -319,6 +536,7 @@ function nearestDoll() {
 function attachCaught() {
   caught = nearestDoll();
   if (!caught) return;
+  caught.userData.contactShadow.visible = false;
   claw.attach(caught);
   caught.position.set(0, -.69, 0);
   caught.rotation.set(0, 0, .08);
@@ -336,7 +554,7 @@ function finishRound() {
     revealEl.innerHTML = `<div class="revealCard"><div class="eyebrow">成功抓取</div><img src="${prize.avatar}" alt="${prize.name}"><h2>${prize.name}</h2><p>角色布偶已加入你的收藏。</p><button type="button">再玩一次</button></div>`;
   } else {
     beep(135, .35, .035, "sawtooth");
-    revealEl.innerHTML = `<div class="revealCard"><div class="missIcon">🫧</div><h2>差一點點</h2><p>重新對準娃娃的中心，再試一次。</p><button type="button">再玩一次</button></div>`;
+    revealEl.innerHTML = `<div class="revealCard"><div class="missIcon" aria-hidden="true"></div><h2>差一點點</h2><p>重新對準娃娃的中心，再試一次。</p><button type="button">再玩一次</button></div>`;
   }
   revealEl.classList.add("on");
   revealEl.querySelector("button").focus();
@@ -347,24 +565,32 @@ function resetRound() {
   if (caught) {
     machine.attach(caught);
     caught.visible = true;
-    const angle = caught.userData.index * 1.73 + Store.data.plays * .81;
-    caught.position.set(Math.sin(angle) * 1.42, .96, Math.cos(angle) * .62 - .03);
-    caught.rotation.set(0, Math.sin(angle) * .25, 0);
+    const slot = startingPositions[(caught.userData.index + Store.data.plays) % startingPositions.length];
+    caught.position.set(slot[0], slot[1], slot[3]);
+    caught.rotation.set(0, slot[2], 0);
+    caught.userData.contactShadow.position.set(slot[0], .962, slot[3]);
+    caught.userData.contactShadow.visible = true;
   }
   caught = null;
   crane.position.set(0, 0, .2); setClawHeight(3.34); setProng(1);
-  phase = "idle"; setControls(true); setStatus("移動吊爪，對準娃娃後按下「抓取」。");
+  phase = "waiting"; updateControlLights(); setStatus("先按機台上的「投幣」。");
 }
 revealEl.addEventListener("click", event => { if (event.target.closest("button")) resetRound(); });
 
 function updateGame(dt) {
   phaseTime += dt;
+  const keyboardX = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
+  const keyboardZ = (held.has("back") ? 1 : 0) - (held.has("forward") ? 1 : 0);
+  const inputX = THREE.MathUtils.clamp(keyboardX + stickInput.x, -1, 1);
+  const inputZ = THREE.MathUtils.clamp(keyboardZ + stickInput.z, -1, 1);
+  const targetTiltX = phase === "idle" ? inputZ * .38 : 0;
+  const targetTiltZ = phase === "idle" ? -inputX * .38 : 0;
+  joystickPivot.rotation.x += (targetTiltX - joystickPivot.rotation.x) * Math.min(dt * 14, 1);
+  joystickPivot.rotation.z += (targetTiltZ - joystickPivot.rotation.z) * Math.min(dt * 14, 1);
   if (phase === "idle") {
     const speed = 1.55 * dt;
-    if (held.has("left")) crane.position.x -= speed;
-    if (held.has("right")) crane.position.x += speed;
-    if (held.has("forward")) crane.position.z -= speed;
-    if (held.has("back")) crane.position.z += speed;
+    crane.position.x += inputX * speed;
+    crane.position.z += inputZ * speed;
     crane.position.x = THREE.MathUtils.clamp(crane.position.x, -1.72, 1.72);
     crane.position.z = THREE.MathUtils.clamp(crane.position.z, -1.05, 1.12);
     railZ.position.x = crane.position.x;
@@ -386,13 +612,16 @@ function updateGame(dt) {
     crane.position.x = THREE.MathUtils.lerp(phaseStart.x, chute.x, e);
     crane.position.z = THREE.MathUtils.lerp(phaseStart.z, chute.y, e);
     railZ.position.x = crane.position.x;
-    if (p === 1) { enter("releasing"); beep(410, .1, .045); }
+    if (p === 1) { enter("releasing", { thud: false }); beep(410, .1, .045); }
   } else if (phase === "releasing") {
-    const p = Math.min(phaseTime / .66, 1); setProng(ease(p));
-    if (caught && phaseTime > .24) caught.position.y -= dt * 3.1;
+    const p = Math.min(phaseTime / .92, 1); setProng(ease(Math.min(p * 1.35, 1)));
+    if (caught && phaseTime > .14) caught.position.y -= dt * 3.15;
+    if (caught && phaseTime > .67 && !phaseStart.thud) {
+      phaseStart.thud = true; beep(118, .22, .065, "triangle");
+    }
     if (p === 1) {
       if (caught) caught.visible = false;
-      enter("showing"); setTimeout(finishRound, 260);
+      enter("showing"); setTimeout(finishRound, 180);
     }
   }
 }
@@ -445,14 +674,21 @@ function animate() {
 
 await Store.load();
 renderProgress();
-setControls(true);
+updateControlLights();
 animate();
 
 if (new URLSearchParams(location.search).has("test")) {
+  const controlPoint = object => {
+    const point = object.getWorldPosition(new THREE.Vector3()).project(camera);
+    const rect = renderer.domElement.getBoundingClientRect();
+    return { x: rect.left + (point.x + 1) * rect.width / 2, y: rect.top + (1 - point.y) * rect.height / 2 };
+  };
   window.__clawTest = {
-    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
+    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
+    getControlPoint: name => controlPoint({ coin: coinButton, grab: grabButton, joystick: joystickKnob }[name]),
     setClaw: (x, z) => { if (phase !== "idle") return false; crane.position.x = THREE.MathUtils.clamp(Number(x), -1.72, 1.72); crane.position.z = THREE.MathUtils.clamp(Number(z), -1.05, 1.12); return true; },
-    forceWin: id => { if (!PRIZES.some(prize => prize.id === id) || phase !== "idle") return false; forcedPrizeId = id; startGrab(); return true; },
+    insertCoin,
+    forceWin: id => { if (!PRIZES.some(prize => prize.id === id) || !["waiting", "idle"].includes(phase)) return false; if (phase === "waiting") insertCoin(); forcedPrizeId = id; startGrab(); return true; },
     reset: resetRound,
   };
 }
