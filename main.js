@@ -236,6 +236,11 @@ function neonGlow(parent, color, width, height, x, y, z, opacity = .34) {
   glow.castShadow = glow.receiveShadow = false;
   return glow;
 }
+function floorNeonGlow(parent, color, width, depth, x, z, opacity = .32) {
+  const glow = neonGlow(parent, color, width, depth, x, .012, z, opacity);
+  glow.rotation.x = -Math.PI / 2;
+  return glow;
+}
 
 // 遊樂園後牆：大面積漸層、拱門、故障訊號線與像素燈，作為角色廣告牆的底圖。
 const wallCanvas = document.createElement("canvas");
@@ -267,15 +272,15 @@ for (let i = 0; i < 7; i++) {
   const y = i % 2 ? 4.08 : 3.95;
   const accent = [PAL.mint, PAL.coral, PAL.amber][i % 3];
   const frame = box(1.78, 1.78, .1, darkMat, x, y, -6.13); frame.castShadow = false;
-  const adGlowMaterial = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 2.1, roughness: .28 });
+  const adGlowMaterial = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 3.4, roughness: .28 });
   const innerFrame = box(1.62, 1.62, .035, adGlowMaterial, x, y, -6.07);
   innerFrame.castShadow = false;
-  neonGlow(scene, accent, 2.18, 2.18, x, y, -6.085, .22);
+  neonGlow(scene, accent, 2.28, 2.28, x, y, -6.085, .36);
   const poster = mesh(new THREE.PlaneGeometry(1.49, 1.49), atlasMaterial(wallAdOrder[i]));
   poster.position.set(x, y, -6.045); poster.castShadow = false;
   for (const cornerX of [-.77, .77]) for (const cornerY of [-.77, .77]) {
     const pixelColor = i % 2 ? PAL.mint : 0xe6a6d6;
-    const pixel = box(.12, .12, .035, new THREE.MeshStandardMaterial({ color: pixelColor, emissive: pixelColor, emissiveIntensity: 2.4 }), x + cornerX, y + cornerY, -6.015);
+    const pixel = box(.12, .12, .035, new THREE.MeshStandardMaterial({ color: pixelColor, emissive: pixelColor, emissiveIntensity: 3.8 }), x + cornerX, y + cornerY, -6.015);
     pixel.castShadow = false;
   }
 }
@@ -449,9 +454,11 @@ for (let i = 0; i < 7; i++) {
   box(1.34, .42, 1.34, mat(PAL.ink, .4, .18), 0, 2.83, .01, cabinet);
   const cabinetGlowMat = new THREE.MeshStandardMaterial({ color: glowColor, emissive: glowColor, emissiveIntensity: 2.35, roughness: .25 });
   box(1.16, .46, .045, cabinetGlowMat, 0, 2.84, .68, cabinet).castShadow = false;
-  neonGlow(cabinet, glowColor, 1.62, .88, 0, 2.84, .66, .36);
+  neonGlow(cabinet, glowColor, 1.72, .96, 0, 2.84, .66, .5);
   const marqueeIndex = (i + 1) % 8;
-  const marqueeFocus = marqueeIndex === 6 ? .5 : .82;
+  // 最右側頂牌的格莉奇原圖頭、手都靠近上緣，再把取樣焦點往上抓一些，
+  // 畫面中的人物便會往下移，不會被牌框切掉臉與指尖。
+  const marqueeFocus = marqueeIndex === 6 ? .5 : marqueeIndex === 7 ? 1 : .82;
   const marquee = mesh(new THREE.PlaneGeometry(1.05, .35), atlasMaterial(marqueeIndex, 1, 1.05 / .35, marqueeFocus), cabinet);
   marquee.position.set(0, 2.84, .707); marquee.castShadow = false;
   const innerShadowMaterial = new THREE.MeshBasicMaterial({ color: 0x241d32, transparent: true, opacity: .34, depthWrite: false });
@@ -500,10 +507,19 @@ for (let i = 0; i < 7; i++) {
   }
   box(.07, 1.68, .05, cabinetGlowMat, -.625, 1.77, .625, cabinet).castShadow = false;
   box(.07, 1.68, .05, cabinetGlowMat, .625, 1.77, .625, cabinet).castShadow = false;
-  neonGlow(cabinet, glowColor, .25, 1.95, -.625, 1.77, .605, .27);
-  neonGlow(cabinet, glowColor, .25, 1.95, .625, 1.77, .605, .27);
-  if (i % 2 === 0) {
-    const cabinetGlow = new THREE.PointLight(glowColor, reducedRendering ? .38 : 1.15, 2.8, 2);
+  neonGlow(cabinet, glowColor, .29, 2.02, -.625, 1.77, .605, .4);
+  neonGlow(cabinet, glowColor, .29, 2.02, .625, 1.77, .605, .4);
+  // 底座燈條和地面光池把機器與地板接起來，不再像黑色方盒直接落地。
+  box(1.12, .045, .045, cabinetGlowMat, 0, .125, .57, cabinet).castShadow = false;
+  floorNeonGlow(cabinet, glowColor, 2.05, 1.65, 0, .08, .62);
+  if (!reducedRendering) {
+    const baseGlow = new THREE.PointLight(glowColor, .82, 2.15, 2);
+    baseGlow.position.set(0, .2, .32);
+    cabinet.add(baseGlow);
+  }
+  // 桌機七台都給局部點光；手機只留交錯四台，維持原本的效能預算。
+  if (!reducedRendering || i % 2 === 0) {
+    const cabinetGlow = new THREE.PointLight(glowColor, reducedRendering ? .42 : 1.28, 3.05, 2);
     cabinetGlow.position.set(0, 1.65, .9);
     cabinet.add(cabinetGlow);
   }
