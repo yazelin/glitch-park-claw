@@ -29,7 +29,9 @@ scene.background = new THREE.Color(0xe8e4f2);
 scene.fog = new THREE.Fog(0xe8e4f2, 11, 23);
 
 const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 50);
+const cameraBase = new THREE.Vector3();
 const cameraTarget = new THREE.Vector3(0, 2.82, 0);
+const look = { x: 0, y: 0, targetX: 0, targetY: 0 };
 const reducedRendering = matchMedia("(pointer: coarse)").matches || innerWidth < 720;
 const renderer = new THREE.WebGLRenderer({ antialias: !reducedRendering, powerPreference: "high-performance" });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -45,7 +47,8 @@ function resize() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.15 : 1.55));
   camera.aspect = innerWidth / innerHeight;
   camera.fov = narrow ? 47 : 39;
-  camera.position.set(narrow ? 0 : 0.12, narrow ? 3.72 : 3.42, narrow ? 12.55 : 11.25);
+  cameraBase.set(narrow ? 0 : 0.12, narrow ? 3.72 : 3.42, narrow ? 12.55 : 11.25);
+  camera.position.copy(cameraBase);
   camera.lookAt(cameraTarget);
   camera.updateProjectionMatrix();
 }
@@ -666,6 +669,7 @@ function setStatus(text) { statusEl.textContent = text; }
 function insertCoin() {
   if (phase !== "waiting") return;
   phase = "idle"; phaseTime = 0;
+  look.targetX = look.targetY = 0;
   coinAnimation = 0; coinToken.visible = true;
   coinToken.position.set(.67, 1.43, 1.54);
   beep(880, .07, .045, "square"); setTimeout(() => beep(1320, .12, .04), 75);
@@ -705,12 +709,22 @@ renderer.domElement.addEventListener("pointerdown", event => {
   }
 });
 renderer.domElement.addEventListener("pointermove", event => {
+  // 沿用扭蛋機的待機視差：指標只改鏡頭目標，主迴圈負責柔和追上。
+  // 投幣後 phase 會離開 waiting，鏡頭便回正，不干擾搖桿的方向感。
+  if (phase === "waiting") {
+    const rect = renderer.domElement.getBoundingClientRect();
+    look.targetX = THREE.MathUtils.clamp((event.clientX - rect.left) / rect.width * 2 - 1, -1, 1);
+    look.targetY = THREE.MathUtils.clamp((event.clientY - rect.top) / rect.height * 2 - 1, -1, 1);
+  }
   if (event.pointerId === joystickPointer) {
     stickInput.x = THREE.MathUtils.clamp((event.clientX - joystickOrigin.x) / 48, -1, 1);
     stickInput.z = THREE.MathUtils.clamp((event.clientY - joystickOrigin.y) / 48, -1, 1);
   } else {
     renderer.domElement.style.cursor = controlHit(event) ? "pointer" : "default";
   }
+});
+renderer.domElement.addEventListener("pointerleave", () => {
+  if (phase === "waiting") look.targetX = look.targetY = 0;
 });
 function releaseJoystick(event) {
   if (event.pointerId !== joystickPointer) return;
@@ -884,6 +898,14 @@ function animate() {
   const dt = Math.min(clock.getDelta(), .04);
   updateGame(dt);
   const time = performance.now() * .001;
+  const idleLook = phase === "waiting";
+  const targetLookX = idleLook ? look.targetX : 0;
+  const targetLookY = idleLook ? look.targetY : 0;
+  look.x += (targetLookX - look.x) * Math.min(dt * 2.6, 1);
+  look.y += (targetLookY - look.y) * Math.min(dt * 2.6, 1);
+  const breathe = idleLook ? Math.sin(time / 5.2) * .045 : 0;
+  camera.position.set(cameraBase.x + look.x * .42, cameraBase.y - look.y * .22 + breathe, cameraBase.z);
+  camera.lookAt(cameraTarget.x + look.x * .12, cameraTarget.y - look.y * .06, cameraTarget.z);
   const pulse = .5 + .5 * Math.sin(time * 5.5);
   coinSlotMaterial.emissiveIntensity = phase === "waiting" ? .55 + pulse * 1.35 : .05;
   grabMaterial.emissiveIntensity = phase === "idle" ? .28 + pulse * 1.15 : .05;
@@ -906,7 +928,7 @@ if (new URLSearchParams(location.search).has("test")) {
     return { x: rect.left + (point.x + 1) * rect.width / 2, y: rect.top + (1 - point.y) * rect.height / 2 };
   };
   window.__clawTest = {
-    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, cues: { coin: coinSlotMaterial.emissiveIntensity, grab: grabMaterial.emissiveIntensity, coinVisible: coinToken.visible }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
+    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, look: { x: look.x, y: look.y, targetX: look.targetX, targetY: look.targetY }, cues: { coin: coinSlotMaterial.emissiveIntensity, grab: grabMaterial.emissiveIntensity, coinVisible: coinToken.visible }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
     getDolls: () => dolls.map(doll => ({ id: doll.userData.prize.id, parent: doll.parent === machine ? "machine" : "claw", visible: doll.visible, x: doll.position.x, y: doll.position.y, z: doll.position.z })),
     getControlPoint: name => controlPoint({ coin: coinSlot, grab: grabButton, joystick: joystickKnob }[name]),
     setClaw: (x, z) => { if (phase !== "idle") return false; crane.position.x = THREE.MathUtils.clamp(Number(x), -.94, .94); crane.position.z = THREE.MathUtils.clamp(Number(z), -1.05, 1.12); return true; },
