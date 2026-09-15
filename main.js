@@ -670,17 +670,19 @@ function updateClawSwing(dt) {
   const moveX = (crane.position.x - previousCranePosition.x) / safeDt;
   const moveZ = (crane.position.z - previousCranePosition.y) / safeDt;
   previousCranePosition.set(crane.position.x, crane.position.z);
-  let targetX = THREE.MathUtils.clamp(moveZ * .065, -.14, .14);
-  let targetZ = THREE.MathUtils.clamp(-moveX * .065, -.14, .14);
+  // 吊爪與纜線很輕，橫車一動就要立刻被甩開。提高移動量對傾角的影響，
+  // 並縮短彈簧週期，避免像沉重吊燈一樣慢半拍才開始晃。
+  let targetX = THREE.MathUtils.clamp(moveZ * .11, -.2, .2);
+  let targetZ = THREE.MathUtils.clamp(-moveX * .11, -.2, .2);
   if (phase === "dropping" || phase === "closing") {
-    targetX += Math.sin(phaseTime * 5.1) * .018;
-    targetZ += Math.cos(phaseTime * 4.7) * .014;
+    targetX += Math.sin(phaseTime * 7.2) * .024;
+    targetZ += Math.cos(phaseTime * 6.6) * .02;
   }
-  // 阻尼刻意低於臨界值，停止移動後會越過中心一兩次，再逐漸靜止。
-  swing.velocityX += ((targetX - suspension.rotation.x) * 22 - swing.velocityX * 5.4) * dt;
-  swing.velocityZ += ((targetZ - suspension.rotation.z) * 22 - swing.velocityZ * 5.4) * dt;
-  suspension.rotation.x = THREE.MathUtils.clamp(suspension.rotation.x + swing.velocityX * dt, -.17, .17);
-  suspension.rotation.z = THREE.MathUtils.clamp(suspension.rotation.z + swing.velocityZ * dt, -.17, .17);
+  // 保留低於臨界值的阻尼，停止後快速越過中心數次，再自然收斂。
+  swing.velocityX += ((targetX - suspension.rotation.x) * 58 - swing.velocityX * 6.8) * dt;
+  swing.velocityZ += ((targetZ - suspension.rotation.z) * 58 - swing.velocityZ * 6.8) * dt;
+  suspension.rotation.x = THREE.MathUtils.clamp(suspension.rotation.x + swing.velocityX * dt, -.24, .24);
+  suspension.rotation.z = THREE.MathUtils.clamp(suspension.rotation.z + swing.velocityZ * dt, -.24, .24);
 }
 
 const held = new Set();
