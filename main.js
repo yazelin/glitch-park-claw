@@ -13,6 +13,7 @@ const collectionListEl = $("#collectionList");
 const collectionCloseButton = $("#collectionClose");
 const exitButton = $("#exit");
 const embedded = window.self !== window.top;
+if (embedded) document.documentElement.classList.add("embedded");
 const THEME_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? "./assets/audio/glitch-park-theme.mp3"
   : "https://yazelin.github.io/glitch-park-claw/assets/audio/glitch-park-theme.mp3";
@@ -102,11 +103,31 @@ const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xdffbff, transparent: 
 // 所有牆面與背景機台共用同一張 4×2 atlas。clone 只建立不同的 UV 視窗，
 // image/source 仍指向同一份 WebP，因此瀏覽器只需要下載一次圖片。
 const textureLoader = new THREE.TextureLoader();
-textureLoader.setCrossOrigin(null);
+// Larch 的 sandbox 可能把內嵌文件視為不透明來源；圖片必須明確以 CORS
+// 模式載入，WebGL 才能安全地把 atlas 上傳成模型貼圖。
+textureLoader.setCrossOrigin("anonymous");
+function loadAtlasTexture(url, onLoad) {
+  fetch(url, { mode: "cors", credentials: "omit" })
+    .then(response => {
+      if (!response.ok) throw new Error(`atlas HTTP ${response.status}`);
+      return response.blob();
+    })
+    .then(blob => {
+      const objectUrl = URL.createObjectURL(blob);
+      textureLoader.load(objectUrl, texture => {
+        URL.revokeObjectURL(objectUrl);
+        onLoad(texture);
+      }, undefined, error => {
+        URL.revokeObjectURL(objectUrl);
+        console.error("atlas texture decode failed", error);
+      });
+    })
+    .catch(error => console.error("atlas texture fetch failed", error));
+}
 const atlasMaterialCache = new Map();
 const pendingAtlasMaterials = [];
 let glitchAtlas = null;
-textureLoader.load("./assets/glitch-atlas.webp", texture => {
+loadAtlasTexture("./assets/glitch-atlas.webp", texture => {
   texture.colorSpace = THREE.SRGBColorSpace;
   glitchAtlas = texture;
   for (const item of pendingAtlasMaterials) {
@@ -146,7 +167,7 @@ function atlasMaterial(index, opacity = 1, aspect = 1, focusY = .5) {
 
 const pendingAvatarMaterials = [];
 let avatarAtlas = null;
-textureLoader.load("./assets/avatar-atlas.webp", texture => {
+loadAtlasTexture("./assets/avatar-atlas.webp", texture => {
   texture.colorSpace = THREE.SRGBColorSpace;
   avatarAtlas = texture;
   for (const item of pendingAvatarMaterials) {
