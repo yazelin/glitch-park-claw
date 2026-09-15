@@ -30,18 +30,19 @@ scene.fog = new THREE.Fog(0xe8e4f2, 11, 23);
 
 const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 50);
 const cameraTarget = new THREE.Vector3(0, 2.65, 0);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const reducedRendering = matchMedia("(pointer: coarse)").matches || innerWidth < 720;
+const renderer = new THREE.WebGLRenderer({ antialias: !reducedRendering, powerPreference: "high-performance" });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !reducedRendering;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 
 function resize() {
   const narrow = innerWidth / innerHeight < 0.76;
   renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.45 : 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.15 : 1.55));
   camera.aspect = innerWidth / innerHeight;
   camera.fov = narrow ? 47 : 39;
   camera.position.set(narrow ? 0 : 0.15, narrow ? 3.5 : 3.25, narrow ? 12.15 : 8.75);
@@ -54,8 +55,8 @@ resize();
 scene.add(new THREE.HemisphereLight(0xffffff, 0x82779c, 2.15));
 const key = new THREE.DirectionalLight(0xfff7e8, 3.2);
 key.position.set(4, 7, 6);
-key.castShadow = true;
-key.shadow.mapSize.set(1024, 1024);
+key.castShadow = !reducedRendering;
+key.shadow.mapSize.set(512, 512);
 key.shadow.camera.left = key.shadow.camera.bottom = -5;
 key.shadow.camera.right = key.shadow.camera.top = 5;
 scene.add(key);
@@ -73,6 +74,55 @@ const paleMat = mat(PAL.pale, 0.48);
 const metalMat = mat(0xbfc1d4, 0.22, 0.82);
 const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xdffbff, transparent: true, opacity: 0.12, roughness: 0.06, metalness: 0, depthWrite: false, side: THREE.DoubleSide });
 
+// 所有牆面與背景機台共用同一張 4×2 atlas。clone 只建立不同的 UV 視窗，
+// image/source 仍指向同一份 WebP，因此瀏覽器只需要下載一次圖片。
+const textureLoader = new THREE.TextureLoader();
+textureLoader.setCrossOrigin(null);
+const atlasViews = [];
+const atlasMaterialCache = new Map();
+const glitchAtlas = textureLoader.load("./assets/glitch-atlas.webp", () => {
+  for (const view of atlasViews) view.needsUpdate = true;
+});
+glitchAtlas.colorSpace = THREE.SRGBColorSpace;
+function atlasView(index) {
+  const view = glitchAtlas.clone();
+  const column = index % 4;
+  const rowFromTop = Math.floor(index / 4);
+  view.colorSpace = THREE.SRGBColorSpace;
+  view.wrapS = view.wrapT = THREE.ClampToEdgeWrapping;
+  view.repeat.set(.25, .5);
+  view.offset.set(column * .25, rowFromTop === 0 ? .5 : 0);
+  view.needsUpdate = true;
+  atlasViews.push(view);
+  return view;
+}
+
+function atlasMaterial(index, opacity = 1) {
+  const key = `${index}:${opacity}`;
+  if (atlasMaterialCache.has(key)) return atlasMaterialCache.get(key);
+  const material = new THREE.MeshBasicMaterial({
+    map: atlasView(index), transparent: opacity < 1, opacity, toneMapped: false,
+  });
+  atlasMaterialCache.set(key, material);
+  return material;
+}
+
+const avatarAtlasViews = [];
+const avatarAtlas = textureLoader.load("./assets/avatar-atlas.webp", () => {
+  for (const view of avatarAtlasViews) view.needsUpdate = true;
+});
+avatarAtlas.colorSpace = THREE.SRGBColorSpace;
+function avatarAtlasView(index) {
+  const view = avatarAtlas.clone();
+  view.colorSpace = THREE.SRGBColorSpace;
+  view.wrapS = view.wrapT = THREE.ClampToEdgeWrapping;
+  view.repeat.set(.25, .5);
+  view.offset.set((index % 4) * .25, Math.floor(index / 4) === 0 ? .5 : 0);
+  view.needsUpdate = true;
+  avatarAtlasViews.push(view);
+  return view;
+}
+
 function mesh(geometry, material, parent = scene) {
   const object = new THREE.Mesh(geometry, material);
   object.castShadow = object.receiveShadow = true;
@@ -80,9 +130,12 @@ function mesh(geometry, material, parent = scene) {
   return object;
 }
 
+const sharedBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
+const sharedSphereGeometry = new THREE.SphereGeometry(1, 16, 12);
 function box(w, h, d, material, x, y, z, parent = scene) {
-  const object = mesh(new THREE.BoxGeometry(w, h, d), material, parent);
+  const object = mesh(sharedBoxGeometry, material, parent);
   object.position.set(x, y, z);
+  object.scale.set(w, h, d);
   return object;
 }
 
@@ -113,7 +166,7 @@ const floor = mesh(new THREE.PlaneGeometry(28, 28), new THREE.MeshStandardMateri
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 
-// 遊樂園後牆：大面積漸層、拱門與像素燈，避免機台像孤零零放在空白攝影棚。
+// 遊樂園後牆：大面積漸層、拱門、故障訊號線與像素燈，作為角色廣告牆的底圖。
 const wallCanvas = document.createElement("canvas");
 wallCanvas.width = 1024; wallCanvas.height = 512;
 const wallContext = wallCanvas.getContext("2d");
@@ -122,41 +175,34 @@ wallGradient.addColorStop(0, "#d9d4ec"); wallGradient.addColorStop(.55, "#c9c1e1
 wallContext.fillStyle = wallGradient; wallContext.fillRect(0, 0, 1024, 512);
 wallContext.fillStyle = "rgba(255,255,255,.18)";
 for (let i = 0; i < 28; i++) wallContext.fillRect(24 + (i * 137) % 970, 24 + (i * 83) % 280, 12 + i % 3 * 7, 12 + i % 3 * 7);
+wallContext.strokeStyle = "rgba(91,72,132,.18)"; wallContext.lineWidth = 3;
+for (let y = 74; y < 460; y += 82) {
+  wallContext.beginPath();
+  wallContext.moveTo(0, y); wallContext.lineTo(155, y); wallContext.lineTo(190, y + 22);
+  wallContext.lineTo(470, y + 22); wallContext.lineTo(505, y); wallContext.lineTo(1024, y);
+  wallContext.stroke();
+}
 wallContext.strokeStyle = "rgba(101,214,205,.35)"; wallContext.lineWidth = 9;
 wallContext.beginPath(); wallContext.arc(512, 515, 360, Math.PI, Math.PI * 2); wallContext.stroke();
 const wallTexture = new THREE.CanvasTexture(wallCanvas); wallTexture.colorSpace = THREE.SRGBColorSpace;
 const backWall = mesh(new THREE.PlaneGeometry(20, 8), new THREE.MeshBasicMaterial({ map: wallTexture }), scene);
 backWall.position.set(0, 3.7, -6.25); backWall.castShadow = false;
 
-function parkPoster(title, subtitle, symbol, left, top, right) {
-  const canvas = document.createElement("canvas"); canvas.width = 512; canvas.height = 320;
-  const context = canvas.getContext("2d");
-  const fill = context.createLinearGradient(0, 0, 512, 320);
-  fill.addColorStop(0, left); fill.addColorStop(.55, top); fill.addColorStop(1, right);
-  context.fillStyle = fill; context.fillRect(0, 0, 512, 320);
-  context.fillStyle = "rgba(255,255,255,.1)";
-  for (let i = 0; i < 18; i++) context.fillRect(22 + (i * 79) % 470, 18 + (i * 53) % 278, 12 + i % 3 * 5, 12 + i % 3 * 5);
-  context.strokeStyle = "rgba(141,232,224,.95)"; context.lineWidth = 10; context.strokeRect(14, 14, 484, 292);
-  context.strokeStyle = "rgba(255,255,255,.55)"; context.lineWidth = 3; context.strokeRect(31, 31, 450, 258);
-  context.textAlign = "center"; context.textBaseline = "middle";
-  context.fillStyle = "#f7f5fb"; context.shadowColor = "#65d6cd"; context.shadowBlur = 14;
-  context.font = "800 78px sans-serif"; context.fillText(symbol, 256, 96);
-  context.font = "800 48px sans-serif"; context.fillText(title, 256, 190);
-  context.shadowBlur = 5; context.fillStyle = "#dffbf8"; context.font = "600 24px sans-serif"; context.fillText(subtitle, 256, 249);
-  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.MeshBasicMaterial({ map: texture });
-}
-
-const posterSpecs = [
-  [-6.55, 3.95, "GACHA", "LUCKY CAPSULE", "G", "#483568", "#8b68b8", "#315f67"],
-  [-3.35, 4.12, "PARK LIVE", "PIXEL LIGHT SHOW", "+", "#3e315d", "#6f5aa0", "#b36f91"],
-  [3.35, 4.12, "777 NIGHT", "JACKPOT PARADE", "777", "#563551", "#9b5575", "#9b763e"],
-  [6.55, 3.95, "CLAW CLUB", "CATCH YOUR FRIEND", "C", "#304d62", "#477f8f", "#69529a"],
-];
-for (const [x, y, title, subtitle, symbol, c1, c2, c3] of posterSpecs) {
-  const frame = box(2.28, 1.5, .09, darkMat, x, y, -6.13); frame.castShadow = false;
-  const poster = mesh(new THREE.PlaneGeometry(2.12, 1.34), parkPoster(title, subtitle, symbol, c1, c2, c3));
-  poster.position.set(x, y, -6.075); poster.castShadow = false;
+// 七張角色廣告和七台背景機器一一對齊。影像都來自同一張 atlas，
+// 外框與角落像素則保留格莉奇遊樂園的紫、青、珊瑚色發光語彙。
+for (let i = 0; i < 7; i++) {
+  const x = -7.2 + i * 2.4;
+  const y = i % 2 ? 4.08 : 3.95;
+  const accent = [PAL.mint, PAL.coral, PAL.amber][i % 3];
+  const frame = box(1.78, 1.78, .1, darkMat, x, y, -6.13); frame.castShadow = false;
+  const innerFrame = box(1.62, 1.62, .035, new THREE.MeshBasicMaterial({ color: accent }), x, y, -6.07);
+  innerFrame.castShadow = false;
+  const poster = mesh(new THREE.PlaneGeometry(1.49, 1.49), atlasMaterial(i));
+  poster.position.set(x, y, -6.045); poster.castShadow = false;
+  for (const cornerX of [-.77, .77]) for (const cornerY of [-.77, .77]) {
+    const pixel = box(.12, .12, .035, new THREE.MeshBasicMaterial({ color: i % 2 ? PAL.mint : 0xe6a6d6 }), x + cornerX, y + cornerY, -6.015);
+    pixel.castShadow = false;
+  }
 }
 
 // 懸掛燈串建立遊樂園的縱深；燈泡只發光，不投動態陰影。
@@ -281,8 +327,8 @@ box(.045, 3.1, .045, trimMaterial, -2.105, 2.56, 1.71, machine).castShadow = fal
 box(.045, 3.1, .045, trimMaterial, 2.105, 2.56, 1.71, machine).castShadow = false;
 box(4.2, .045, .045, trimMaterial, 0, 4.08, 1.71, machine).castShadow = false;
 
-// 背景街機有完整輪廓、燈牌、螢幕與控制台，但材質和對比刻意壓低，
-// 讓它們看得出是遊樂園機台，又不會搶走中央娃娃機。
+// 七台背景街機各自從 atlas 取不同廣告，貼在螢幕、頂部燈牌、正面下櫃與側板。
+// 機身仍稍微壓低亮度，讓廣告豐富遠景，但不會搶走中央娃娃機的操作焦點。
 for (let i = 0; i < 7; i++) {
   const x = -7.2 + i * 2.4;
   const cabinet = new THREE.Group();
@@ -293,10 +339,13 @@ for (let i = 0; i < 7; i++) {
   const glowColor = [0xf0c66f, 0x78d8cf, 0xe98176][i % 3];
   const body = box(1.48, 2.65, 1.28, mat(bodyColor, .64), 0, 1.38, 0, cabinet);
   body.castShadow = false;
-  box(1.34, .28, 1.34, mat(PAL.ink, .4, .18), 0, 2.82, .01, cabinet);
-  box(1.08, .38, .04, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.84, .68, cabinet).castShadow = false;
-  const screenMaterial = new THREE.MeshStandardMaterial({ color: 0x403859, emissive: glowColor, emissiveIntensity: .34, roughness: .38 });
-  box(1.06, 1.03, .045, screenMaterial, 0, 1.94, .66, cabinet).castShadow = false;
+  box(1.34, .42, 1.34, mat(PAL.ink, .4, .18), 0, 2.83, .01, cabinet);
+  box(1.16, .46, .045, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.84, .68, cabinet).castShadow = false;
+  const marquee = mesh(new THREE.PlaneGeometry(1.05, .35), atlasMaterial((i + 1) % 8), cabinet);
+  marquee.position.set(0, 2.84, .707); marquee.castShadow = false;
+  box(1.16, 1.13, .045, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 1.94, .66, cabinet).castShadow = false;
+  const screen = mesh(new THREE.PlaneGeometry(1.04, 1.01), atlasMaterial(i), cabinet);
+  screen.position.set(0, 1.94, .689); screen.castShadow = false;
   box(.92, .08, .025, new THREE.MeshBasicMaterial({ color: glowColor }), 0, 2.33, .69, cabinet).castShadow = false;
   const deck = box(1.28, .16, .55, mat(0xd7d1e4, .55), 0, 1.21, .77, cabinet);
   deck.rotation.x = -.12;
@@ -305,12 +354,21 @@ for (let i = 0; i < 7; i++) {
   sphere(cabinet, .07, glowColor, -.28, 1.5, .82);
   sphere(cabinet, .055, PAL.coral, .25, 1.37, .84, [1, .55, 1]);
   sphere(cabinet, .055, PAL.mint, .43, 1.36, .84, [1, .55, 1]);
+  box(1.08, .68, .045, new THREE.MeshBasicMaterial({ color: 0x302740 }), 0, .69, .66, cabinet).castShadow = false;
+  const lowerAd = mesh(new THREE.PlaneGeometry(.96, .56), atlasMaterial((i + 4) % 8), cabinet);
+  lowerAd.position.set(0, .69, .688); lowerAd.castShadow = false;
+  for (const side of [-1, 1]) {
+    box(.045, 1.42, .9, new THREE.MeshBasicMaterial({ color: glowColor }), side * .746, 1.82, 0, cabinet).castShadow = false;
+    const sideAd = mesh(new THREE.PlaneGeometry(.78, 1.28), atlasMaterial((i + (side < 0 ? 2 : 3)) % 8), cabinet);
+    sideAd.position.set(side * .77, 1.82, 0);
+    sideAd.rotation.y = side * Math.PI / 2;
+    sideAd.castShadow = false;
+  }
   box(.12, 2.35, .08, new THREE.MeshBasicMaterial({ color: glowColor }), -.63, 1.7, .67, cabinet).castShadow = false;
   box(.12, 2.35, .08, new THREE.MeshBasicMaterial({ color: glowColor }), .63, 1.7, .67, cabinet).castShadow = false;
   box(1.12, .14, 1.1, darkMat, 0, .08, 0, cabinet);
 }
 
-const textureLoader = new THREE.TextureLoader();
 const dolls = [];
 const startingPositions = [
   [-1.64, 1.41, .14, .06], [-1.1, 1.41, .1, -.05], [-.55, 1.41, .05, -.11],
@@ -318,8 +376,9 @@ const startingPositions = [
 ];
 
 function sphere(parent, radius, color, x, y, z, scale = [1, 1, 1]) {
-  const object = mesh(new THREE.SphereGeometry(radius, 24, 16), mat(color, .82), parent);
-  object.position.set(x, y, z); object.scale.set(...scale);
+  const object = mesh(sharedSphereGeometry, mat(color, .82), parent);
+  object.position.set(x, y, z);
+  object.scale.set(radius * scale[0], radius * scale[1], radius * scale[2]);
   return object;
 }
 
@@ -455,8 +514,7 @@ function createDoll(prize, index) {
       brow.rotation.z = side * slant;
     }
   }
-  const badgeTexture = textureLoader.load(prize.avatar);
-  badgeTexture.colorSpace = THREE.SRGBColorSpace;
+  const badgeTexture = avatarAtlasView(prize.atlasIndex);
   const badgeBack = mesh(new THREE.CircleGeometry(.225, 28), paleMat, doll);
   badgeBack.position.set(0, .015, .247);
   const badge = mesh(new THREE.CircleGeometry(.195, 28), new THREE.MeshBasicMaterial({ map: badgeTexture, transparent: true }), doll);
@@ -664,7 +722,7 @@ function finishRound() {
   renderProgress();
   if (prize) {
     beep(523, .16, .05); setTimeout(() => beep(659, .18, .05), 100); setTimeout(() => beep(784, .3, .05), 210);
-    revealEl.innerHTML = `<div class="revealCard"><div class="eyebrow">成功抓取</div><img src="${prize.avatar}" alt="${prize.name}"><h2>${prize.name}</h2><p>角色布偶已加入你的收藏。</p><button type="button">再玩一次</button></div>`;
+    revealEl.innerHTML = `<div class="revealCard"><div class="eyebrow">成功抓取</div><span class="avatarSprite revealAvatar" style="${avatarStyle(prize)}" role="img" aria-label="${prize.name}"></span><h2>${prize.name}</h2><p>角色布偶已加入你的收藏。</p><button type="button">再玩一次</button></div>`;
   } else {
     beep(135, .35, .035, "sawtooth");
     revealEl.innerHTML = `<div class="revealCard"><div class="missIcon" aria-hidden="true"></div><h2>差一點點</h2><p>重新對準娃娃的中心，再試一次。</p><button type="button">再玩一次</button></div>`;
@@ -752,9 +810,15 @@ function renderProgress() {
   progressEl.innerHTML = PRIZES.map(prize => {
     const owned = Store.data.owned.includes(prize.id);
     return owned
-      ? `<div class="prizeSlot has" title="${prize.name}"><img src="${prize.avatar}" alt="${prize.name}"></div>`
+      ? `<div class="prizeSlot has" title="${prize.name}"><span class="avatarSprite" style="${avatarStyle(prize)}" role="img" aria-label="${prize.name}"></span></div>`
       : `<div class="prizeSlot" title="還沒夾到">？</div>`;
   }).join("");
+}
+
+function avatarStyle(prize) {
+  const column = prize.atlasIndex % 4;
+  const row = Math.floor(prize.atlasIndex / 4);
+  return `--avatar-x:${column / 3 * 100}%;--avatar-y:${row * 100}%`;
 }
 
 function openCollection() {
@@ -762,7 +826,7 @@ function openCollection() {
   collectionTitleEl.textContent = `收集進度　${owned.length} / ${PRIZES.length}`;
   collectionListEl.innerHTML = owned.length
     ? owned.map(prize => `<div class="collectionRow">
-        <img src="${prize.avatar}" alt="">
+        <span class="avatarSprite collectionAvatar" style="${avatarStyle(prize)}" role="img" aria-label="${prize.name}"></span>
         <div><div class="collectionName">${prize.name}</div><div class="collectionType">角色布偶</div></div>
       </div>`).join("")
     : `<div class="collectionEmpty">還沒夾到任何人，先對準一隻娃娃試試看。</div>`;
