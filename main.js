@@ -211,12 +211,18 @@ joystickBase.position.set(.65, 1.11, 1.53); joystickBase.userData.control = "joy
 const joystickPivot = new THREE.Group(); joystickPivot.position.set(.65, 1.14, 1.53); machine.add(joystickPivot);
 const joystickStick = mesh(new THREE.CylinderGeometry(.035, .045, .34, 12), metalMat, joystickPivot); joystickStick.position.y = .17;
 const joystickKnob = mesh(new THREE.SphereGeometry(.105, 18, 12), mat(PAL.violet, .28), joystickPivot); joystickKnob.position.y = .37; joystickKnob.userData.control = "joystick";
-const coinMaterial = new THREE.MeshStandardMaterial({ color: PAL.amber, emissive: PAL.amber, emissiveIntensity: .45, roughness: .28 });
 const grabMaterial = new THREE.MeshStandardMaterial({ color: PAL.coral, emissive: PAL.coral, emissiveIntensity: .08, roughness: .28 });
-const coinButton = mesh(new THREE.CylinderGeometry(.13, .15, .1, 24), coinMaterial, machine);
-coinButton.position.set(1.19, 1.12, 1.54); coinButton.userData.control = "coin";
+const coinSlotMaterial = new THREE.MeshStandardMaterial({ color: 0x271f35, emissive: PAL.amber, emissiveIntensity: .08, roughness: .32 });
+const coinPlate = box(.34, .035, .36, darkMat, 1.19, 1.1, 1.54, machine);
+coinPlate.userData.control = "coin";
+const coinSlot = box(.055, .022, .22, coinSlotMaterial, 1.19, 1.124, 1.54, machine);
+coinSlot.userData.control = "coin";
+const coinToken = mesh(new THREE.CylinderGeometry(.115, .115, .025, 24), mat(PAL.amber, .28, .42), machine);
+coinToken.rotation.z = Math.PI / 2; coinToken.position.set(1.19, 1.43, 1.54); coinToken.visible = false;
 const grabButton = mesh(new THREE.CylinderGeometry(.17, .19, .11, 24), grabMaterial, machine);
 grabButton.position.set(1.68, 1.13, 1.54); grabButton.userData.control = "grab";
+const coinGlow = new THREE.PointLight(PAL.amber, 0, 1.2, 2); coinGlow.position.set(1.19, 1.35, 1.72); machine.add(coinGlow);
+const grabGlow = new THREE.PointLight(PAL.coral, 0, 1.25, 2); grabGlow.position.set(1.68, 1.34, 1.72); machine.add(grabGlow);
 const controlHitMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
 const joystickHit = mesh(new THREE.CylinderGeometry(.34, .34, .25, 20), controlHitMaterial, machine);
 joystickHit.position.set(.65, 1.18, 1.53); joystickHit.userData.control = "joystick"; joystickHit.castShadow = false;
@@ -233,7 +239,7 @@ function panelLabel(text, x) {
   const label = mesh(new THREE.PlaneGeometry(.34, .13), new THREE.MeshBasicMaterial({ map: texture }), machine);
   label.position.set(x, .94, 1.955); label.castShadow = false;
 }
-panelLabel("移動", .65); panelLabel("投幣", 1.19); panelLabel("夾取", 1.68);
+panelLabel("移動", .65); panelLabel("投幣孔", 1.19); panelLabel("夾取", 1.68);
 
 // 招牌用 CanvasTexture，避免額外字型與圖片依賴。
 const signCanvas = document.createElement("canvas");
@@ -340,6 +346,20 @@ function createDoll(prize, index) {
     addLock(0xc6d0f0, .25, .51, .45, 1.08, .18);
     box(.055, .055, .035, new THREE.MeshBasicMaterial({ color: PAL.mint }), .22, .65, .305, doll);
     box(.04, .04, .035, new THREE.MeshBasicMaterial({ color: PAL.mint }), .29, .71, .305, doll);
+    const cowlickCurve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(-.04, .78, .01), new THREE.Vector3(-.15, .98, .015), new THREE.Vector3(.035, 1.02, .02)
+    );
+    mesh(new THREE.TubeGeometry(cowlickCurve, 12, .026, 8, false), mat(0xc6d0f0, .75), doll);
+    for (const side of [-1, 1]) {
+      const antennaCurve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(side * .11, .79, -.015),
+        new THREE.Vector3(side * .18, .93, 0),
+        new THREE.Vector3(side * .25, .99, .015)
+      );
+      mesh(new THREE.TubeGeometry(antennaCurve, 9, .016, 7, false), mat(0x665887, .42, .35), doll);
+      const antennaTip = box(.065, .065, .055, new THREE.MeshStandardMaterial({ color: PAL.mint, emissive: PAL.mint, emissiveIntensity: 1.1 }), side * .255, .995, .018, doll);
+      antennaTip.rotation.z = side * .16;
+    }
   } else if (prize.id === "catgrass") {
     addHairCap(0x40355f, [1.05, .7, .95]);
     for (const side of [-1, 1]) {
@@ -347,6 +367,12 @@ function createDoll(prize, index) {
       ear.rotation.z = side * -.28;
     }
     addLock(0x594a78, -.27, .52, .46, 1.12, -.2);
+    const headphoneBand = mesh(new THREE.TorusGeometry(.24, .035, 8, 28, Math.PI), mat(0x302744, .38, .18), doll);
+    headphoneBand.position.set(0, .24, .08); headphoneBand.rotation.z = Math.PI;
+    for (const side of [-1, 1]) {
+      sphere(doll, .09, 0x302744, side * .29, .18, .17, [.65, 1, .52]);
+      sphere(doll, .055, side < 0 ? 0x8de8e0 : 0x9b7fd4, side * .29, .18, .225, [.62, 1, .42]);
+    }
   } else if (prize.id === "bambi") {
     addHairCap(0xe6a6d6, [1.05, .67, .95]);
     sphere(doll, .17, 0xe6a6d6, -.32, .56, -.04, [.72, 1, .72]);
@@ -529,10 +555,11 @@ let phaseTime = 0;
 let phaseStart = {};
 let caught = null;
 let forcedPrizeId = null;
+let coinAnimation = -1;
 const chute = new THREE.Vector2(chuteX, chuteZ);
 
 function updateControlLights() {
-  coinMaterial.emissiveIntensity = phase === "waiting" ? .7 : .08;
+  coinSlotMaterial.emissiveIntensity = phase === "waiting" ? .7 : .06;
   grabMaterial.emissiveIntensity = phase === "idle" ? .65 : .06;
 }
 
@@ -541,7 +568,8 @@ function setStatus(text) { statusEl.textContent = text; }
 function insertCoin() {
   if (phase !== "waiting") return;
   phase = "idle"; phaseTime = 0;
-  coinButton.scale.y = .62; setTimeout(() => { coinButton.scale.y = 1; }, 130);
+  coinAnimation = 0; coinToken.visible = true;
+  coinToken.position.set(1.19, 1.43, 1.54);
   beep(880, .07, .045, "square"); setTimeout(() => beep(1320, .12, .04), 75);
   setStatus("拖動機台搖桿對準娃娃，再按「夾取」。");
   updateControlLights();
@@ -558,7 +586,7 @@ function startGrab() {
 
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
-const controlMeshes = [joystickHit, coinHit, grabHit, joystickBase, joystickKnob, coinButton, grabButton];
+const controlMeshes = [joystickHit, coinHit, grabHit, joystickBase, joystickKnob, coinPlate, coinSlot, grabButton];
 let joystickPointer = null;
 let joystickOrigin = { x: 0, y: 0 };
 function controlHit(event) {
@@ -651,12 +679,19 @@ function resetRound() {
   }
   caught = null;
   crane.position.set(0, 0, .2); setClawHeight(3.34); setProng(1);
-  phase = "waiting"; updateControlLights(); setStatus("先按機台上的「投幣」。");
+  phase = "waiting"; updateControlLights(); setStatus("請先點擊機台上的「投幣孔」。");
 }
 revealEl.addEventListener("click", event => { if (event.target.closest("button")) resetRound(); });
 
 function updateGame(dt) {
   phaseTime += dt;
+  if (coinAnimation >= 0) {
+    coinAnimation += dt;
+    const progress = Math.min(coinAnimation / .42, 1);
+    coinToken.position.y = THREE.MathUtils.lerp(1.43, 1.13, progress * progress);
+    coinToken.rotation.x = progress * .25;
+    if (progress === 1) { coinToken.visible = false; coinAnimation = -1; }
+  }
   const keyboardX = (held.has("right") ? 1 : 0) - (held.has("left") ? 1 : 0);
   const keyboardZ = (held.has("back") ? 1 : 0) - (held.has("forward") ? 1 : 0);
   const inputX = THREE.MathUtils.clamp(keyboardX + stickInput.x, -1, 1);
@@ -745,6 +780,11 @@ function animate() {
   const dt = Math.min(clock.getDelta(), .04);
   updateGame(dt);
   const time = performance.now() * .001;
+  const pulse = .5 + .5 * Math.sin(time * 5.5);
+  coinSlotMaterial.emissiveIntensity = phase === "waiting" ? .55 + pulse * 1.35 : .05;
+  grabMaterial.emissiveIntensity = phase === "idle" ? .28 + pulse * 1.15 : .05;
+  coinGlow.intensity = phase === "waiting" ? .35 + pulse * 1.1 : 0;
+  grabGlow.intensity = phase === "idle" ? .25 + pulse * .9 : 0;
   dolls.forEach((doll, index) => { if (doll.visible && doll.parent === machine) doll.rotation.z = Math.sin(time * 1.2 + index) * .015; });
   insideLight.intensity = 6.6 + Math.sin(time * 2.1) * .35;
   renderer.render(scene, camera);
@@ -762,9 +802,9 @@ if (new URLSearchParams(location.search).has("test")) {
     return { x: rect.left + (point.x + 1) * rect.width / 2, y: rect.top + (1 - point.y) * rect.height / 2 };
   };
   window.__clawTest = {
-    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
+    getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, cues: { coin: coinSlotMaterial.emissiveIntensity, grab: grabMaterial.emissiveIntensity, coinVisible: coinToken.visible }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
     getDolls: () => dolls.map(doll => ({ id: doll.userData.prize.id, parent: doll.parent === machine ? "machine" : "claw", visible: doll.visible, x: doll.position.x, y: doll.position.y, z: doll.position.z })),
-    getControlPoint: name => controlPoint({ coin: coinButton, grab: grabButton, joystick: joystickKnob }[name]),
+    getControlPoint: name => controlPoint({ coin: coinSlot, grab: grabButton, joystick: joystickKnob }[name]),
     setClaw: (x, z) => { if (phase !== "idle") return false; crane.position.x = THREE.MathUtils.clamp(Number(x), -1.72, 1.72); crane.position.z = THREE.MathUtils.clamp(Number(z), -1.05, 1.12); return true; },
     insertCoin,
     forceWin: id => { if (!PRIZES.some(prize => prize.id === id) || !["waiting", "idle"].includes(phase)) return false; if (phase === "waiting") insertCoin(); forcedPrizeId = id; startGrab(); return true; },
