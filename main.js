@@ -66,7 +66,10 @@ function resize() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.15 : 1.55));
   camera.aspect = innerWidth / innerHeight;
   camera.fov = narrow ? 47 : 39;
-  cameraBase.set(narrow ? 0 : 0.08, narrow ? 3.74 : 3.48, narrow ? 10 : 8.95);
+  // 手機構圖已經合適，只調桌機：相機略抬高、視線略往下，增加從機台上方
+  // 看進玻璃櫃的感覺，同時不把下櫃重新塞回大半個畫面。
+  cameraBase.set(narrow ? 0 : 0.08, narrow ? 3.74 : 3.8, narrow ? 10 : 8.95);
+  cameraTarget.set(0, narrow ? 2.82 : 2.68, 0);
   camera.position.copy(cameraBase);
   camera.lookAt(cameraTarget);
   camera.updateProjectionMatrix();
@@ -211,6 +214,29 @@ const floor = mesh(new THREE.PlaneGeometry(28, 28), new THREE.MeshStandardMateri
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 
+// 低成本的霓虹外暈。只用一張程式產生的徑向漸層，所有燈共用；亮芯仍是
+// 實體幾何，這層只負責模擬 bloom，手機不必多跑後製 pass。
+const neonGlowCanvas = document.createElement("canvas");
+neonGlowCanvas.width = neonGlowCanvas.height = 96;
+const neonGlowContext = neonGlowCanvas.getContext("2d");
+const neonGlowGradient = neonGlowContext.createRadialGradient(48, 48, 3, 48, 48, 48);
+neonGlowGradient.addColorStop(0, "rgba(255,255,255,.9)");
+neonGlowGradient.addColorStop(.2, "rgba(255,255,255,.42)");
+neonGlowGradient.addColorStop(1, "rgba(255,255,255,0)");
+neonGlowContext.fillStyle = neonGlowGradient;
+neonGlowContext.fillRect(0, 0, 96, 96);
+const neonGlowTexture = new THREE.CanvasTexture(neonGlowCanvas);
+neonGlowTexture.colorSpace = THREE.SRGBColorSpace;
+function neonGlow(parent, color, width, height, x, y, z, opacity = .34) {
+  const glow = mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshBasicMaterial({
+    map: neonGlowTexture, color, transparent: true, opacity,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+  }), parent);
+  glow.position.set(x, y, z);
+  glow.castShadow = glow.receiveShadow = false;
+  return glow;
+}
+
 // 遊樂園後牆：大面積漸層、拱門、故障訊號線與像素燈，作為角色廣告牆的底圖。
 const wallCanvas = document.createElement("canvas");
 wallCanvas.width = 1024; wallCanvas.height = 512;
@@ -244,6 +270,7 @@ for (let i = 0; i < 7; i++) {
   const adGlowMaterial = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 2.1, roughness: .28 });
   const innerFrame = box(1.62, 1.62, .035, adGlowMaterial, x, y, -6.07);
   innerFrame.castShadow = false;
+  neonGlow(scene, accent, 2.18, 2.18, x, y, -6.085, .22);
   const poster = mesh(new THREE.PlaneGeometry(1.49, 1.49), atlasMaterial(wallAdOrder[i]));
   poster.position.set(x, y, -6.045); poster.castShadow = false;
   for (const cornerX of [-.77, .77]) for (const cornerY of [-.77, .77]) {
@@ -262,7 +289,8 @@ for (let i = 0; i <= 30; i++) {
   const point = cordCurve.getPoint(i / 30);
   const bulbColor = i % 3 === 0 ? PAL.mint : i % 3 === 1 ? PAL.amber : 0xe6a6d6;
   const bulb = sphere(festoon, .07, bulbColor, point.x, point.y - .09, point.z, [1, 1.18, 1]);
-  bulb.material.emissive = new THREE.Color(bulbColor); bulb.material.emissiveIntensity = 1.1; bulb.castShadow = false;
+  bulb.material.emissive = new THREE.Color(bulbColor); bulb.material.emissiveIntensity = 3.2; bulb.castShadow = false;
+  neonGlow(festoon, bulbColor, .46, .46, point.x, point.y - .09, point.z - .025, .52);
 }
 
 const machine = new THREE.Group();
@@ -276,7 +304,7 @@ const lowerLightColors = [PAL.mint, 0xe6a6d6, PAL.amber];
 const lowerLightHeights = [.36, .58, .44, .68, .42, .56, .34];
 const lowerLightOffsets = [.05, -.03, .08, 0, -.07, .04, -.02];
 const lowerLightMaterials = lowerLightColors.map(color => new THREE.MeshStandardMaterial({
-  color, emissive: color, emissiveIntensity: 1.75, roughness: .24, metalness: .12,
+  color, emissive: color, emissiveIntensity: 3.4, roughness: .24, metalness: .12,
 }));
 for (let i = 0; i < 7; i++) {
   const x = -.99 + i * .33;
@@ -288,6 +316,7 @@ for (let i = 0; i < 7; i++) {
   pocket.castShadow = false;
   const core = box(i % 2 ? .105 : .13, height, i % 2 ? .045 : .075, lowerLightMaterials[i % 3], x, y, i % 2 ? 1.925 : 1.955, machine);
   core.castShadow = false;
+  neonGlow(machine, lowerLightColors[i % 3], .36, height + .34, x, y, 1.91, .3);
   const cap = box(.105, .105, .055, lowerLightMaterials[(i + 1) % 3], x, y + height / 2 - .015, 1.96, machine);
   cap.rotation.z = Math.PI / 4;
   cap.castShadow = false;
@@ -392,10 +421,14 @@ const sign = mesh(new THREE.PlaneGeometry(1.42, .33), new THREE.MeshBasicMateria
 // 下櫃面板正面在 z≈1.875。整組招牌往前移，圖面與任何周邊模型至少相隔
 // 0.1，避免斜視角或低精度深度緩衝時再次出現 z-fighting。
 sign.position.set(.58, .39, 1.98);
-const signLight = new THREE.PointLight(PAL.mint, 2.6, 3.2, 1.8); signLight.position.set(.58, .48, 2.12); machine.add(signLight);
+neonGlow(machine, PAL.mint, 2.05, .92, .58, .39, 1.965, .4);
+const signLight = new THREE.PointLight(PAL.mint, 4.2, 3.7, 1.8); signLight.position.set(.58, .48, 2.12); machine.add(signLight);
 
 // 機台正面的像素燈框呼應格莉奇的青色髮飾。
-const trimMaterial = new THREE.MeshStandardMaterial({ color: PAL.mint, emissive: PAL.mint, emissiveIntensity: 1.25, roughness: .3 });
+const trimMaterial = new THREE.MeshStandardMaterial({ color: PAL.mint, emissive: PAL.mint, emissiveIntensity: 3.5, roughness: .3 });
+neonGlow(machine, PAL.mint, .34, 3.42, -1.23, 2.56, 1.69, .32);
+neonGlow(machine, PAL.mint, .34, 3.42, 1.23, 2.56, 1.69, .32);
+neonGlow(machine, PAL.mint, 2.78, .34, 0, 4.08, 1.69, .3);
 box(.045, 3.1, .045, trimMaterial, -1.23, 2.56, 1.71, machine).castShadow = false;
 box(.045, 3.1, .045, trimMaterial, 1.23, 2.56, 1.71, machine).castShadow = false;
 box(2.45, .045, .045, trimMaterial, 0, 4.08, 1.71, machine).castShadow = false;
@@ -416,6 +449,7 @@ for (let i = 0; i < 7; i++) {
   box(1.34, .42, 1.34, mat(PAL.ink, .4, .18), 0, 2.83, .01, cabinet);
   const cabinetGlowMat = new THREE.MeshStandardMaterial({ color: glowColor, emissive: glowColor, emissiveIntensity: 2.35, roughness: .25 });
   box(1.16, .46, .045, cabinetGlowMat, 0, 2.84, .68, cabinet).castShadow = false;
+  neonGlow(cabinet, glowColor, 1.62, .88, 0, 2.84, .66, .36);
   const marqueeIndex = (i + 1) % 8;
   const marqueeFocus = marqueeIndex === 6 ? .5 : .82;
   const marquee = mesh(new THREE.PlaneGeometry(1.05, .35), atlasMaterial(marqueeIndex, 1, 1.05 / .35, marqueeFocus), cabinet);
@@ -466,8 +500,10 @@ for (let i = 0; i < 7; i++) {
   }
   box(.07, 1.68, .05, cabinetGlowMat, -.625, 1.77, .625, cabinet).castShadow = false;
   box(.07, 1.68, .05, cabinetGlowMat, .625, 1.77, .625, cabinet).castShadow = false;
+  neonGlow(cabinet, glowColor, .25, 1.95, -.625, 1.77, .605, .27);
+  neonGlow(cabinet, glowColor, .25, 1.95, .625, 1.77, .605, .27);
   if (i % 2 === 0) {
-    const cabinetGlow = new THREE.PointLight(glowColor, reducedRendering ? .32 : .62, 2.35, 2);
+    const cabinetGlow = new THREE.PointLight(glowColor, reducedRendering ? .38 : 1.15, 2.8, 2);
     cabinetGlow.position.set(0, 1.65, .9);
     cabinet.add(cabinetGlow);
   }
