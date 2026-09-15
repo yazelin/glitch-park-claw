@@ -44,7 +44,7 @@ function resize() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, narrow ? 1.45 : 2));
   camera.aspect = innerWidth / innerHeight;
   camera.fov = narrow ? 47 : 39;
-  camera.position.set(narrow ? 0 : 0.15, narrow ? 3.05 : 2.8, narrow ? 9.8 : 8.1);
+  camera.position.set(narrow ? 0 : 0.15, narrow ? 3.05 : 2.8, narrow ? 11.25 : 8.1);
   camera.lookAt(cameraTarget);
   camera.updateProjectionMatrix();
 }
@@ -128,6 +128,37 @@ const wallTexture = new THREE.CanvasTexture(wallCanvas); wallTexture.colorSpace 
 const backWall = mesh(new THREE.PlaneGeometry(20, 8), new THREE.MeshBasicMaterial({ map: wallTexture }), scene);
 backWall.position.set(0, 3.7, -6.25); backWall.castShadow = false;
 
+function parkPoster(title, subtitle, symbol, left, top, right) {
+  const canvas = document.createElement("canvas"); canvas.width = 512; canvas.height = 320;
+  const context = canvas.getContext("2d");
+  const fill = context.createLinearGradient(0, 0, 512, 320);
+  fill.addColorStop(0, left); fill.addColorStop(.55, top); fill.addColorStop(1, right);
+  context.fillStyle = fill; context.fillRect(0, 0, 512, 320);
+  context.fillStyle = "rgba(255,255,255,.1)";
+  for (let i = 0; i < 18; i++) context.fillRect(22 + (i * 79) % 470, 18 + (i * 53) % 278, 12 + i % 3 * 5, 12 + i % 3 * 5);
+  context.strokeStyle = "rgba(141,232,224,.95)"; context.lineWidth = 10; context.strokeRect(14, 14, 484, 292);
+  context.strokeStyle = "rgba(255,255,255,.55)"; context.lineWidth = 3; context.strokeRect(31, 31, 450, 258);
+  context.textAlign = "center"; context.textBaseline = "middle";
+  context.fillStyle = "#f7f5fb"; context.shadowColor = "#65d6cd"; context.shadowBlur = 14;
+  context.font = "800 78px sans-serif"; context.fillText(symbol, 256, 96);
+  context.font = "800 48px sans-serif"; context.fillText(title, 256, 190);
+  context.shadowBlur = 5; context.fillStyle = "#dffbf8"; context.font = "600 24px sans-serif"; context.fillText(subtitle, 256, 249);
+  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshBasicMaterial({ map: texture });
+}
+
+const posterSpecs = [
+  [-6.55, 3.95, "GACHA", "LUCKY CAPSULE", "G", "#483568", "#8b68b8", "#315f67"],
+  [-3.35, 4.12, "PARK LIVE", "PIXEL LIGHT SHOW", "+", "#3e315d", "#6f5aa0", "#b36f91"],
+  [3.35, 4.12, "777 NIGHT", "JACKPOT PARADE", "777", "#563551", "#9b5575", "#9b763e"],
+  [6.55, 3.95, "CLAW CLUB", "CATCH YOUR FRIEND", "C", "#304d62", "#477f8f", "#69529a"],
+];
+for (const [x, y, title, subtitle, symbol, c1, c2, c3] of posterSpecs) {
+  const frame = box(2.28, 1.5, .09, darkMat, x, y, -6.13); frame.castShadow = false;
+  const poster = mesh(new THREE.PlaneGeometry(2.12, 1.34), parkPoster(title, subtitle, symbol, c1, c2, c3));
+  poster.position.set(x, y, -6.075); poster.castShadow = false;
+}
+
 // 懸掛燈串建立遊樂園的縱深；燈泡只發光，不投動態陰影。
 const festoon = new THREE.Group(); scene.add(festoon);
 const cordCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-8, 5.4, -3.7), new THREE.Vector3(0, 4.85, -4.2), new THREE.Vector3(8, 5.4, -3.7)]);
@@ -186,6 +217,13 @@ const coinButton = mesh(new THREE.CylinderGeometry(.13, .15, .1, 24), coinMateri
 coinButton.position.set(1.19, 1.12, 1.54); coinButton.userData.control = "coin";
 const grabButton = mesh(new THREE.CylinderGeometry(.17, .19, .11, 24), grabMaterial, machine);
 grabButton.position.set(1.68, 1.13, 1.54); grabButton.userData.control = "grab";
+const controlHitMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+const joystickHit = mesh(new THREE.CylinderGeometry(.34, .34, .25, 20), controlHitMaterial, machine);
+joystickHit.position.set(.65, 1.18, 1.53); joystickHit.userData.control = "joystick"; joystickHit.castShadow = false;
+const coinHit = mesh(new THREE.CylinderGeometry(.26, .26, .25, 20), controlHitMaterial, machine);
+coinHit.position.set(1.19, 1.18, 1.54); coinHit.userData.control = "coin"; coinHit.castShadow = false;
+const grabHit = mesh(new THREE.CylinderGeometry(.29, .29, .25, 20), controlHitMaterial, machine);
+grabHit.position.set(1.68, 1.19, 1.54); grabHit.userData.control = "grab"; grabHit.castShadow = false;
 
 function panelLabel(text, x) {
   const canvas = document.createElement("canvas"); canvas.width = 256; canvas.height = 96;
@@ -280,8 +318,8 @@ function createDoll(prize, index) {
   sphere(doll, .33, prize.color, 0, -.05, 0, [.83, 1.05, .67]);
   sphere(doll, .14, prize.color, -.31, .0, 0, [.65, 1.15, .7]);
   sphere(doll, .14, prize.color, .31, .0, 0, [.65, 1.15, .7]);
-  sphere(doll, .15, prize.color, -.17, -.36, 0, [.72, 1.15, .8]);
-  sphere(doll, .15, prize.color, .17, -.36, 0, [.72, 1.15, .8]);
+  const leftLeg = sphere(doll, .15, prize.color, -.17, -.36, 0, [.72, 1.15, .8]);
+  const rightLeg = sphere(doll, .15, prize.color, .17, -.36, 0, [.72, 1.15, .8]);
 
   // 頭部只用官方頭像看得懂的特徵。第一版拿三角錐代替「髮束／耳朵」，
   // 結果四個人像長角，後排的角又會插到前排頭上。這裡改成圓潤的布偶語彙：
@@ -342,8 +380,46 @@ function createDoll(prize, index) {
     const crown = mesh(new THREE.CylinderGeometry(.23, .28, .25, 24), mat(0xb7803e, .52), doll);
     crown.position.set(0, .9, -.02); crown.rotation.z = -.08;
     box(.5, .045, .28, darkMat, 0, .82, -.02, doll).rotation.z = -.08;
+    leftLeg.visible = rightLeg.visible = false;
+    // 黑洞先生不是一般兩足布偶。六條短觸足從圓身下方向外攤開，
+    // 保留不倒翁的可愛比例，又能一眼看出他的非人輪廓。
+    const feet = [
+      [-.25, -.31, .08, -.36, -.5, .08], [-.1, -.34, .08, -.16, -.56, .14],
+      [.1, -.34, .08, .16, -.56, .14], [.25, -.31, .08, .36, -.5, .08],
+      [-.18, -.3, -.08, -.31, -.5, -.16], [.18, -.3, -.08, .31, -.5, -.16],
+    ];
+    for (const [sx, sy, sz, ex, ey, ez] of feet) {
+      const curve = new THREE.QuadraticBezierCurve3(
+        new THREE.Vector3(sx, sy, sz),
+        new THREE.Vector3((sx + ex) / 2, ey + .08, (sz + ez) / 2),
+        new THREE.Vector3(ex, ey, ez)
+      );
+      mesh(new THREE.TubeGeometry(curve, 10, .07, 8, false), mat(prize.color, .84), doll);
+      sphere(doll, .075, prize.color, ex, ey, ez, [1.2, .72, 1]);
+    }
   }
-  for (const side of [-1, 1]) sphere(doll, .04, 0x302940, side * .12, .46, .29, [1, 1.3, .6]);
+
+  // 七人各自的眼色與神情。眼白、虹膜與高光仍用柔軟圓形，符合雪人／不倒翁
+  // 布偶的語彙；差異放在顏色、開合程度和眉形，不再共用同一對黑豆眼。
+  const eyeStyle = {
+    glitch:    { iris: 0x5c8fd4, sclera: 0xf4f2ff, sy: 1.05 },
+    catgrass:  { iris: 0x765b9d, sclera: 0xeee8fa, sy: .72, brow: "soft" },
+    bambi:     { iris: 0xbe71aa, sclera: 0xffeffa, sy: 1.0 },
+    noah:      { iris: 0xa77038, sclera: 0xeee4d8, sy: .58, brow: "wise" },
+    tower:     { iris: 0x477fa8, sclera: 0xeaf7ff, sy: .7, brow: "sharp" },
+    zerox:     { iris: 0x887db5, sclera: 0xf2f0fa, sy: .82 },
+    blackhole: { iris: 0x252033, sclera: 0xf1eff8, sy: .5, brow: "sleepy" },
+  }[prize.id];
+  for (const side of [-1, 1]) {
+    sphere(doll, .063, eyeStyle.sclera, side * .12, .46, .292, [1.12, eyeStyle.sy, .52]);
+    sphere(doll, .035, eyeStyle.iris, side * .12, .455, .337, [.86, eyeStyle.sy, .42]);
+    sphere(doll, .011, 0xffffff, side * .12 - .01, .475, .365, [1, 1, .4]);
+    if (eyeStyle.brow) {
+      const brow = box(.105, .018, .025, darkMat, side * .12, .535, .326, doll);
+      const slant = eyeStyle.brow === "sharp" ? -.18 : eyeStyle.brow === "wise" ? .13 : .05;
+      brow.rotation.z = side * slant;
+    }
+  }
   const badgeTexture = textureLoader.load(prize.avatar);
   badgeTexture.colorSpace = THREE.SRGBColorSpace;
   const badgeBack = mesh(new THREE.CircleGeometry(.225, 28), paleMat, doll);
@@ -353,7 +429,7 @@ function createDoll(prize, index) {
   const contactShadow = mesh(new THREE.CircleGeometry(.28, 28), new THREE.MeshBasicMaterial({ color: PAL.ink, transparent: true, opacity: .16, depthWrite: false }), machine);
   contactShadow.rotation.x = -Math.PI / 2; contactShadow.scale.y = .58; contactShadow.position.set(x, .962, z);
   contactShadow.castShadow = false;
-  doll.userData = { prize, home: new THREE.Vector3(x, y, z), index, contactShadow };
+  doll.userData = { prize, home: new THREE.Vector3(x, y, z), homeRotation: rot, index, contactShadow };
   dolls.push(doll);
   return doll;
 }
@@ -482,7 +558,7 @@ function startGrab() {
 
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
-const controlMeshes = [joystickBase, joystickKnob, coinButton, grabButton];
+const controlMeshes = [joystickHit, coinHit, grabHit, joystickBase, joystickKnob, coinButton, grabButton];
 let joystickPointer = null;
 let joystickOrigin = { x: 0, y: 0 };
 function controlHit(event) {
@@ -565,10 +641,12 @@ function resetRound() {
   if (caught) {
     machine.attach(caught);
     caught.visible = true;
-    const slot = startingPositions[(caught.userData.index + Store.data.plays) % startingPositions.length];
-    caught.position.set(slot[0], slot[1], slot[3]);
-    caught.rotation.set(0, slot[2], 0);
-    caught.userData.contactShadow.position.set(slot[0], .962, slot[3]);
+    // 每隻娃娃只回自己的展示位。舊版依遊玩次數輪換位置，會把剛夾到的娃娃
+    // 塞進另一隻仍站著的位置，造成身體與胸牌重疊。
+    caught.position.copy(caught.userData.home);
+    caught.rotation.set(0, caught.userData.homeRotation, 0);
+    caught.scale.setScalar(.84);
+    caught.userData.contactShadow.position.set(caught.userData.home.x, .962, caught.userData.home.z);
     caught.userData.contactShadow.visible = true;
   }
   caught = null;
@@ -685,6 +763,7 @@ if (new URLSearchParams(location.search).has("test")) {
   };
   window.__clawTest = {
     getState: () => ({ phase, claw: { x: crane.position.x, z: crane.position.z }, joystick: { x: joystickPivot.rotation.x, z: joystickPivot.rotation.z }, soundEnabled, store: structuredClone(Store.data), caught: caught?.userData.prize.id || null }),
+    getDolls: () => dolls.map(doll => ({ id: doll.userData.prize.id, parent: doll.parent === machine ? "machine" : "claw", visible: doll.visible, x: doll.position.x, y: doll.position.y, z: doll.position.z })),
     getControlPoint: name => controlPoint({ coin: coinButton, grab: grabButton, joystick: joystickKnob }[name]),
     setClaw: (x, z) => { if (phase !== "idle") return false; crane.position.x = THREE.MathUtils.clamp(Number(x), -1.72, 1.72); crane.position.z = THREE.MathUtils.clamp(Number(z), -1.05, 1.12); return true; },
     insertCoin,
