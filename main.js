@@ -44,9 +44,9 @@ const PAL = {
 };
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x100b1b);
+scene.background = new THREE.Color(0x281b38);
 // 霧從廣告牆後方才開始，避免遠景照片被混成灰白色。
-scene.fog = new THREE.Fog(0x171023, 18, 30);
+scene.fog = new THREE.Fog(0x302040, 18, 30);
 
 const camera = new THREE.PerspectiveCamera(39, 1, 0.1, 50);
 const cameraBase = new THREE.Vector3();
@@ -98,7 +98,7 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-scene.add(new THREE.HemisphereLight(0xcac0e6, 0x10091b, 1.2));
+scene.add(new THREE.HemisphereLight(0xd7cdec, 0x382348, 1.42));
 const key = new THREE.DirectionalLight(0xeee9ff, 1.82);
 key.position.set(4, 7, 6);
 key.castShadow = !reducedRendering;
@@ -253,7 +253,7 @@ const floorCanvas = document.createElement("canvas");
 floorCanvas.width = floorCanvas.height = 256;
 const floorContext = floorCanvas.getContext("2d");
 for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
-  floorContext.fillStyle = (x + y) % 2 ? "#21172f" : "#302141";
+  floorContext.fillStyle = (x + y) % 2 ? "#49375d" : "#5b476f";
   floorContext.fillRect(x * 64, y * 64, 64, 64);
 }
 floorContext.strokeStyle = "rgba(141,232,224,.11)"; floorContext.lineWidth = 3;
@@ -261,7 +261,7 @@ for (let n = 0; n <= 256; n += 64) { floorContext.beginPath(); floorContext.move
 const floorTexture = new THREE.CanvasTexture(floorCanvas);
 floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; floorTexture.repeat.set(9, 9); floorTexture.colorSpace = THREE.SRGBColorSpace;
 const floor = mesh(new THREE.PlaneGeometry(28, 28), new THREE.MeshStandardMaterial({
-  map: floorTexture, roughness: .58, metalness: .16, envMapIntensity: .9 }));
+  map: floorTexture, roughness: .58, metalness: .12, envMapIntensity: .78 }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 
@@ -298,7 +298,7 @@ const wallCanvas = document.createElement("canvas");
 wallCanvas.width = 1024; wallCanvas.height = 512;
 const wallContext = wallCanvas.getContext("2d");
 const wallGradient = wallContext.createLinearGradient(0, 0, 0, 512);
-wallGradient.addColorStop(0, "#130c21"); wallGradient.addColorStop(.55, "#221334"); wallGradient.addColorStop(1, "#382052");
+wallGradient.addColorStop(0, "#3a294d"); wallGradient.addColorStop(.55, "#4c315f"); wallGradient.addColorStop(1, "#654478");
 wallContext.fillStyle = wallGradient; wallContext.fillRect(0, 0, 1024, 512);
 wallContext.fillStyle = "rgba(101,230,218,.18)";
 for (let i = 0; i < 28; i++) wallContext.fillRect(24 + (i * 137) % 970, 24 + (i * 83) % 280, 12 + i % 3 * 7, 12 + i % 3 * 7);
