@@ -56,10 +56,30 @@ const reducedRendering = matchMedia("(pointer: coarse)").matches || innerWidth <
 const renderer = new THREE.WebGLRenderer({ antialias: !reducedRendering, powerPreference: "high-performance" });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = !reducedRendering;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
+
+// 金屬與玻璃需要「可以反射的房間」。用一張極小的程式漸層經 PMREM 產生
+// 柔和環境反射，不下載 HDR，也能讓夾爪、邊框與玻璃各自呈現不同材質。
+(function buildEnvironment() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 32; canvas.height = 64;
+  const context = canvas.getContext("2d");
+  const gradient = context.createLinearGradient(0, 0, 0, 64);
+  gradient.addColorStop(0, "#cffff9");
+  gradient.addColorStop(.22, "#8b68bf");
+  gradient.addColorStop(.58, "#352047");
+  gradient.addColorStop(1, "#08050e");
+  context.fillStyle = gradient; context.fillRect(0, 0, 32, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.mapping = THREE.EquirectangularReflectionMapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromEquirectangular(texture).texture;
+  pmrem.dispose(); texture.dispose();
+})();
 
 function resize() {
   const narrow = innerWidth / innerHeight < 0.76;
@@ -69,8 +89,8 @@ function resize() {
   camera.fov = narrow ? 47 : 39;
   // 手機構圖已經合適，只調桌機：相機略抬高、視線略往下，增加從機台上方
   // 看進玻璃櫃的感覺，同時不把下櫃重新塞回大半個畫面。
-  cameraBase.set(narrow ? 0 : 0.08, narrow ? 3.74 : 3.8, narrow ? 10 : 8.95);
-  cameraTarget.set(0, narrow ? 2.82 : 2.68, 0);
+  cameraBase.set(narrow ? 0 : 0.08, narrow ? 3.74 : 4.16, narrow ? 10 : 8.95);
+  cameraTarget.set(0, narrow ? 2.82 : 3.3, 0);
   camera.position.copy(cameraBase);
   camera.lookAt(cameraTarget);
   camera.updateProjectionMatrix();
@@ -79,26 +99,32 @@ addEventListener("resize", resize);
 resize();
 
 scene.add(new THREE.HemisphereLight(0xbeb3dc, 0x10091b, 1.05));
-const key = new THREE.DirectionalLight(0xded7ff, 1.8);
+const key = new THREE.DirectionalLight(0xded7ff, 1.55);
 key.position.set(4, 7, 6);
 key.castShadow = !reducedRendering;
 key.shadow.mapSize.set(512, 512);
 key.shadow.camera.left = key.shadow.camera.bottom = -5;
 key.shadow.camera.right = key.shadow.camera.top = 5;
 scene.add(key);
-const insideLight = new THREE.PointLight(PAL.mint, 7, 7, 1.8);
+const insideLight = new THREE.PointLight(PAL.mint, 6, 7, 1.8);
 insideLight.position.set(-1.25, 3.9, 0.2);
 scene.add(insideLight);
 const warmLight = new THREE.PointLight(PAL.amber, 5, 5, 1.8);
 warmLight.position.set(1.35, 3.5, 0.8);
 scene.add(warmLight);
+const showcaseLight = new THREE.SpotLight(0xbefbf4, 7.5, 12, .48, .72, 1.6);
+showcaseLight.position.set(-2.8, 7.4, 4.8);
+showcaseLight.target.position.set(0, 2.6, 0);
+scene.add(showcaseLight, showcaseLight.target);
 
 const mat = (color, roughness = 0.55, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const violetMat = mat(PAL.violet, 0.34, 0.08);
 const darkMat = mat(PAL.ink, 0.3, 0.55);
 const paleMat = mat(PAL.pale, 0.48);
 const metalMat = mat(0xbfc1d4, 0.22, 0.82);
-const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xdffbff, transparent: true, opacity: 0.12, roughness: 0.06, metalness: 0, depthWrite: false, side: THREE.DoubleSide });
+const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xdffbff, transparent: true, opacity: 0.15,
+  roughness: 0.045, metalness: 0, clearcoat: 1, clearcoatRoughness: .025,
+  envMapIntensity: 1.55, depthWrite: false, side: THREE.DoubleSide });
 
 // 所有牆面與背景機台共用同一張 4×2 atlas。clone 只建立不同的 UV 視窗，
 // image/source 仍指向同一份 WebP，因此瀏覽器只需要下載一次圖片。
@@ -231,7 +257,8 @@ floorContext.strokeStyle = "rgba(141,232,224,.11)"; floorContext.lineWidth = 3;
 for (let n = 0; n <= 256; n += 64) { floorContext.beginPath(); floorContext.moveTo(n, 0); floorContext.lineTo(n, 256); floorContext.stroke(); floorContext.beginPath(); floorContext.moveTo(0, n); floorContext.lineTo(256, n); floorContext.stroke(); }
 const floorTexture = new THREE.CanvasTexture(floorCanvas);
 floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; floorTexture.repeat.set(9, 9); floorTexture.colorSpace = THREE.SRGBColorSpace;
-const floor = mesh(new THREE.PlaneGeometry(28, 28), new THREE.MeshStandardMaterial({ map: floorTexture, roughness: .88 }));
+const floor = mesh(new THREE.PlaneGeometry(28, 28), new THREE.MeshStandardMaterial({
+  map: floorTexture, roughness: .58, metalness: .16, envMapIntensity: .9 }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 
@@ -284,6 +311,23 @@ wallContext.beginPath(); wallContext.arc(512, 515, 360, Math.PI, Math.PI * 2); w
 const wallTexture = new THREE.CanvasTexture(wallCanvas); wallTexture.colorSpace = THREE.SRGBColorSpace;
 const backWall = mesh(new THREE.PlaneGeometry(32, 13), new THREE.MeshBasicMaterial({ map: wallTexture }), scene);
 backWall.position.set(0, 3.7, -6.25); backWall.castShadow = false;
+
+// 空氣中的微光粒只在景深中緩慢漂移，讓玻璃櫃與背景之間不再像兩張平面。
+// 使用單一 Points draw call；粗指標裝置減半，保留手機餘裕。
+const dustCount = reducedRendering ? 34 : 72;
+const dustPositions = new Float32Array(dustCount * 3);
+for (let i = 0; i < dustCount; i++) {
+  dustPositions[i * 3] = (Math.random() - .5) * 18;
+  dustPositions[i * 3 + 1] = .5 + Math.random() * 6;
+  dustPositions[i * 3 + 2] = -5.8 + Math.random() * 9;
+}
+const dustGeometry = new THREE.BufferGeometry();
+dustGeometry.setAttribute("position", new THREE.BufferAttribute(dustPositions, 3));
+const dust = new THREE.Points(dustGeometry, new THREE.PointsMaterial({
+  color: PAL.mint, size: .035, transparent: true, opacity: .42,
+  blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+}));
+scene.add(dust);
 
 // 七張角色廣告和七台背景機器一一對齊。影像都來自同一張 atlas，
 // 外框與角落像素則保留格莉奇遊樂園的紫、青、珊瑚色發光語彙。
@@ -1146,6 +1190,8 @@ function animate() {
   updateGame(dt);
   updateClawSwing(dt);
   const time = performance.now() * .001;
+  dust.rotation.y = time * .012;
+  dust.position.y = Math.sin(time * .32) * .08;
   const idleLook = phase === "waiting";
   const targetLookX = idleLook ? look.targetX : 0;
   const targetLookY = idleLook ? look.targetY : 0;
@@ -1160,7 +1206,7 @@ function animate() {
   coinGlow.intensity = phase === "waiting" ? .35 + pulse * 1.1 : 0;
   grabGlow.intensity = phase === "idle" ? .25 + pulse * .9 : 0;
   updateDollTopples(dt, time);
-  insideLight.intensity = 6.6 + Math.sin(time * 2.1) * .35;
+  insideLight.intensity = 5.8 + Math.sin(time * 2.1) * .3;
   renderer.render(scene, camera);
 }
 
