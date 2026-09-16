@@ -56,7 +56,7 @@ const reducedRendering = matchMedia("(pointer: coarse)").matches || innerWidth <
 const renderer = new THREE.WebGLRenderer({ antialias: !reducedRendering, powerPreference: "high-performance" });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.08;
 renderer.shadowMap.enabled = !reducedRendering;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
@@ -98,24 +98,27 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-scene.add(new THREE.HemisphereLight(0xbeb3dc, 0x10091b, 1.05));
-const key = new THREE.DirectionalLight(0xded7ff, 1.55);
+scene.add(new THREE.HemisphereLight(0xcac0e6, 0x10091b, 1.2));
+const key = new THREE.DirectionalLight(0xeee9ff, 1.82);
 key.position.set(4, 7, 6);
 key.castShadow = !reducedRendering;
 key.shadow.mapSize.set(512, 512);
 key.shadow.camera.left = key.shadow.camera.bottom = -5;
 key.shadow.camera.right = key.shadow.camera.top = 5;
 scene.add(key);
-const insideLight = new THREE.PointLight(PAL.mint, 6, 7, 1.8);
+const insideLight = new THREE.PointLight(PAL.mint, 7.4, 7, 1.8);
 insideLight.position.set(-1.25, 3.9, 0.2);
 scene.add(insideLight);
-const warmLight = new THREE.PointLight(PAL.amber, 5, 5, 1.8);
+const warmLight = new THREE.PointLight(PAL.amber, 6.2, 5, 1.8);
 warmLight.position.set(1.35, 3.5, 0.8);
 scene.add(warmLight);
-const showcaseLight = new THREE.SpotLight(0xbefbf4, 7.5, 12, .48, .72, 1.6);
+const showcaseLight = new THREE.SpotLight(0xbefbf4, 10, 12, .48, .72, 1.6);
 showcaseLight.position.set(-2.8, 7.4, 4.8);
 showcaseLight.target.position.set(0, 2.6, 0);
 scene.add(showcaseLight, showcaseLight.target);
+const frontFill = new THREE.PointLight(0xd9d0ff, 3.8, 8, 2);
+frontFill.position.set(0, 2.8, 5.4);
+scene.add(frontFill);
 
 const mat = (color, roughness = 0.55, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const violetMat = mat(PAL.violet, 0.34, 0.08);
@@ -1206,7 +1209,7 @@ function animate() {
   coinGlow.intensity = phase === "waiting" ? .35 + pulse * 1.1 : 0;
   grabGlow.intensity = phase === "idle" ? .25 + pulse * .9 : 0;
   updateDollTopples(dt, time);
-  insideLight.intensity = 5.8 + Math.sin(time * 2.1) * .3;
+  insideLight.intensity = 7.1 + Math.sin(time * 2.1) * .38;
   renderer.render(scene, camera);
 }
 
