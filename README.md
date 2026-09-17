@@ -32,3 +32,6 @@ python3 -m http.server 8000
 ## 測試介面
 
 網址加上 `?test=1` 後，可從瀏覽器主控台使用 `window.__clawTest` 檢查狀態、移動吊爪或指定下一次抓到的角色。
+
+主題曲改從 jsDelivr 載（五款共用同一個網址，瀏覽器快取共用）：`https://cdn.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3`。
+Pages 直連 700 KB 要 11 秒、jsDelivr 1 秒。改檔要 purge：`https://purge.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3`。

@@ -16,7 +16,7 @@ const embedded = window.self !== window.top;
 if (embedded) document.documentElement.classList.add("embedded");
 const THEME_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? "./assets/audio/glitch-park-theme.mp3"
-  : "https://yazelin.github.io/glitch-park-claw/assets/audio/glitch-park-theme.mp3";
+  : "https://cdn.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3";
 let themeAudio = null;
 
 // 同一首遊樂園主題曲由同一個播放層負責。獨立開啟時，本頁在瀏覽器允許的
