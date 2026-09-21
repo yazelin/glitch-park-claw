@@ -35,3 +35,9 @@ python3 -m http.server 8000
 
 主題曲改從 jsDelivr 載（五款共用同一個網址，瀏覽器快取共用）：`https://cdn.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3`。
 Pages 直連 700 KB 要 11 秒、jsDelivr 1 秒。改檔要 purge：`https://purge.jsdelivr.net/gh/yazelin/glitch-park-claw@main/assets/audio/glitch-park-theme.mp3`。
+
+## 授權
+
+**雙軌**：角色（格莉奇、黑洞先生）與美術素材是 **CC BY-NC 4.0**（見 `LICENSE`），
+程式碼是 **MIT**（見 `LICENSE-CODE`）。要照抄跟 Larch 卡片溝通的那段協定實作，
+走 MIT 那份就可以，不必連美術一起拿。商業使用含角色授權要先問過林亞澤。
